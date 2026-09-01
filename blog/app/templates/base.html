@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Hamba — thoughtful travel stories and restorative stays.">
+  <title>{% block title %}Hamba — Travel and stay well{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: { colors: { forest: '#183c32', sage: '#8da694', sand: '#f4ecdf', coral: '#e8794f', ink: '#17251f' }, fontFamily: { sans: ['DM Sans', 'sans-serif'], display: ['Playfair Display', 'serif'] } } } }
+  </script>
+  <style>body{background:#faf7f1}.image-fade{background:#e8dfd1}</style>
+</head>
+<body class="font-sans text-ink antialiased">
+  <header class="absolute inset-x-0 top-0 z-20 text-white">
+    <nav class="mx-auto flex max-w-7xl items-center justify-between px-6 py-7 lg:px-8" aria-label="Main navigation">
+      <a href="/" class="font-display text-3xl font-bold tracking-tight">Hamba<span class="text-coral">.</span></a>
+      <a href="/#journeys" class="rounded-full border border-white/40 bg-white/10 px-5 py-2 text-sm font-medium backdrop-blur transition hover:bg-white hover:text-forest">Explore journeys</a>
+    </nav>
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+  <footer class="bg-forest text-white">
+    <div class="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-12 sm:flex-row sm:items-end sm:justify-between lg:px-8">
+      <div><p class="font-display text-3xl font-bold">Hamba<span class="text-coral">.</span></p><p class="mt-2 text-sm text-white/65">Travel and stay well.</p></div>
+      <p class="text-sm text-white/50">Stories for moving gently through the world.</p>
+    </div>
+  </footer>
+</body>
+</html>

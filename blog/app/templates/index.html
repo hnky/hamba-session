@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="relative flex min-h-[82vh] items-end overflow-hidden bg-forest">
+  <img src="/images/{{ posts[0].image_blob }}" onerror="this.onerror=null;this.src='/static/placeholder.svg'" alt="{{ posts[0].title }}" class="absolute inset-0 h-full w-full object-cover opacity-70">
+  <div class="absolute inset-0 bg-gradient-to-t from-forest via-forest/25 to-black/25"></div>
+  <div class="relative mx-auto w-full max-w-7xl px-6 pb-20 pt-40 text-white lg:px-8 lg:pb-28">
+    <p class="mb-5 flex items-center gap-3 text-xs font-semibold uppercase tracking-[.28em] text-orange-100"><span class="h-px w-10 bg-coral"></span>Travel and stay well</p>
+    <h1 class="max-w-4xl font-display text-5xl font-bold leading-[.98] sm:text-7xl lg:text-8xl">Go far.<br><span class="italic text-orange-100">Return restored.</span></h1>
+    <p class="mt-7 max-w-xl text-lg leading-8 text-white/80">Slow travel guides, beautiful places, and thoughtful ways to feel at home wherever you land.</p>
+  </div>
+</section>
+
+<section id="journeys" class="mx-auto max-w-7xl px-6 py-20 lg:px-8 lg:py-28">
+  <div class="mb-12 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
+    <div><p class="text-xs font-semibold uppercase tracking-[.25em] text-coral">Field notes</p><h2 class="mt-3 font-display text-4xl font-bold text-forest sm:text-5xl">Latest journeys</h2></div>
+    <p class="max-w-sm text-sm leading-6 text-ink/60">Three places to breathe deeper, wander longer, and make the journey part of feeling well.</p>
+  </div>
+  <div class="grid gap-x-7 gap-y-12 md:grid-cols-2 lg:grid-cols-3">
+    {% for post in posts %}
+    <article class="group">
+      <a href="/posts/{{ post.slug }}" class="block overflow-hidden rounded-[2rem] image-fade">
+        <img src="/images/{{ post.image_blob }}" onerror="this.onerror=null;this.src='/static/placeholder.svg'" alt="Destination view for {{ post.title }}" loading="lazy" class="aspect-[4/5] w-full object-cover transition duration-700 group-hover:scale-105">
+      </a>
+      <div class="px-2 pt-6">
+        <time datetime="{{ post.published_at }}" class="text-xs font-semibold uppercase tracking-[.2em] text-coral">{{ post.published_at }}</time>
+        <h3 class="mt-3 font-display text-3xl font-bold leading-tight text-forest"><a href="/posts/{{ post.slug }}" class="transition group-hover:text-coral">{{ post.title }}</a></h3>
+        <p class="mt-3 leading-7 text-ink/65">{{ post.lead }}</p>
+        <a href="/posts/{{ post.slug }}" class="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-forest">Read the story <span aria-hidden="true" class="transition group-hover:translate-x-1">→</span></a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="bg-sand">
+  <div class="mx-auto grid max-w-7xl gap-8 px-6 py-20 lg:grid-cols-[1fr_1.5fr] lg:px-8">
+    <p class="text-xs font-semibold uppercase tracking-[.25em] text-coral">The Hamba way</p>
+    <blockquote class="font-display text-3xl font-semibold leading-tight text-forest sm:text-4xl">“Take only the journey that leaves you more connected—to a place, to its people, and to yourself.”</blockquote>
+  </div>
+</section>
+{% endblock %}

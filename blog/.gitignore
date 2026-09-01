@@ -1,0 +1,6 @@
+.azure/
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.env

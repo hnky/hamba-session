@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}{{ post.title }} — Hamba{% endblock %}
+{% block content %}
+<article>
+  <header class="relative flex min-h-[74vh] items-end overflow-hidden bg-forest">
+    <img src="/images/{{ post.image_blob }}" onerror="this.onerror=null;this.src='/static/placeholder.svg'" alt="Destination view for {{ post.title }}" class="absolute inset-0 h-full w-full object-cover opacity-65">
+    <div class="absolute inset-0 bg-gradient-to-t from-forest via-forest/25 to-black/25"></div>
+    <div class="relative mx-auto w-full max-w-5xl px-6 pb-16 pt-40 text-white lg:px-8 lg:pb-24">
+      <a href="/" class="mb-8 inline-flex items-center gap-2 text-sm text-white/75 transition hover:text-white">← All journeys</a>
+      <time datetime="{{ post.published_at }}" class="block text-xs font-semibold uppercase tracking-[.25em] text-orange-100">Published {{ post.published_at }}</time>
+      <h1 class="mt-5 max-w-4xl font-display text-5xl font-bold leading-[1.02] sm:text-7xl">{{ post.title }}</h1>
+      <p class="mt-6 max-w-2xl text-lg leading-8 text-white/80 sm:text-xl">{{ post.lead }}</p>
+    </div>
+  </header>
+  <div class="mx-auto grid max-w-5xl gap-10 px-6 py-16 lg:grid-cols-[180px_1fr] lg:px-8 lg:py-24">
+    <aside class="text-xs font-semibold uppercase tracking-[.2em] text-coral">A Hamba field note</aside>
+    <div class="max-w-2xl">
+      {% for paragraph in post.story %}<p class="mb-7 text-lg leading-9 text-ink/75">{{ paragraph }}</p>{% endfor %}
+      {% if post.source_url %}
+      <p class="mt-10 rounded-2xl bg-sand p-5 text-sm leading-6 text-ink/65">Adapted into an original English summary from <a href="{{ post.source_url }}" target="_blank" rel="noopener noreferrer" class="font-semibold text-forest underline decoration-coral underline-offset-4">the source story on Hamba.nl</a>.</p>
+      {% endif %}
+      <div class="mt-12 border-t border-forest/15 pt-8"><a href="/" class="font-semibold text-forest transition hover:text-coral">Continue exploring →</a></div>
+    </div>
+  </div>
+</article>
+{% endblock %}

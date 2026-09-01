@@ -1,0 +1,15 @@
+name: hamba
+metadata:
+  template: hamba@0.1.0
+infra:
+  provider: bicep
+  path: infra
+services:
+  web:
+    project: .
+    language: python
+    host: containerapp
+    docker:
+      path: Dockerfile
+      context: .
+      remoteBuild: true

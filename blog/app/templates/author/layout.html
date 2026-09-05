@@ -11,7 +11,10 @@
 <section class="mx-auto min-h-[45vh] max-w-5xl px-6 py-12">
   {% if author %}
   <div class="mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-forest/15 pb-5">
-    <a href="/author/posts" class="font-semibold text-forest hover:underline">Your stories</a>
+    <nav aria-label="Author navigation" class="flex flex-wrap gap-5">
+      <a href="/author/posts" class="font-semibold text-forest hover:underline">Your stories</a>
+      {% if author.is_admin %}<a href="/author/api-keys" class="font-semibold text-forest hover:underline">API keys</a>{% endif %}
+    </nav>
     <form action="/author/logout" method="post" class="flex items-center gap-4">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <span class="text-sm text-ink/70">Signed in as {{ author.username }}</span>

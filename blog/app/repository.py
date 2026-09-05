@@ -1,15 +1,18 @@
 import json
+import hashlib
+from datetime import datetime, timezone
 import ipaddress
 import logging
 import os
 from pathlib import Path
 import socket
+import secrets
 from urllib.parse import urljoin, urlparse
 from uuid import uuid4
 
 import httpx
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
-from azure.data.tables import TableServiceClient
+from azure.data.tables import TableServiceClient, UpdateMode
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient, ContentSettings
 
@@ -30,6 +33,7 @@ class BlogRepository:
         self._container = None
         self._local_posts = {post["slug"]: dict(post) for post in SAMPLE_POSTS}
         self._local_images: dict[str, tuple[bytes, str]] = {}
+        self._local_api_keys: dict[str, dict] = {}
 
         if self.is_cloud_backed:
             credential = DefaultAzureCredential()
@@ -113,6 +117,75 @@ class BlogRepository:
             return self._normalize(dict(self._table.get_entity("published", slug)))
         except ResourceNotFoundError:
             return None
+
+    @staticmethod
+    def _api_key_metadata(entity: dict) -> dict[str, str]:
+        # Explicit allowlist: never expose the stored hash to templates/callers.
+        return {
+            "id": entity["RowKey"],
+            "name": entity["name"],
+            "prefix": entity["prefix"],
+            "created_at": entity["created_at"],
+            "revoked_at": entity.get("revoked_at", ""),
+        }
+
+    def create_api_key(self, username: str, name: str) -> tuple[dict[str, str], str]:
+        name = name.strip()
+        if not name or len(name) > 80 or any(ord(char) < 32 for char in name):
+            raise ValueError("Enter a key name of 1–80 characters without control characters")
+        key_id = uuid4().hex
+        raw_key = f"hamba_{key_id}_{secrets.token_urlsafe(32)}"
+        entity = {
+            "PartitionKey": "api-keys",
+            "RowKey": key_id,
+            "created_by": username,
+            "name": name,
+            "prefix": f"hamba_{key_id[:8]}",
+            "key_hash": "sha256$" + hashlib.sha256(raw_key.encode()).hexdigest(),
+            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "revoked_at": "",
+        }
+        if self.is_cloud_backed:
+            self._table.create_entity(entity)
+        else:
+            self._local_api_keys[key_id] = entity
+        # This is the only time the complete key is returned; it is not stored.
+        return self._api_key_metadata(entity), raw_key
+
+    def list_api_keys(self, username: str) -> list[dict[str, str]]:
+        if self.is_cloud_backed:
+            entities = self._table.query_entities(
+                "PartitionKey eq @partition and created_by eq @owner",
+                parameters={"partition": "api-keys", "owner": username},
+                select=["RowKey", "name", "prefix", "created_at", "revoked_at"],
+            )
+        else:
+            entities = [item for item in self._local_api_keys.values() if item["created_by"] == username]
+        return sorted(
+            (self._api_key_metadata(dict(item)) for item in entities),
+            key=lambda item: (item["created_at"], item["id"]), reverse=True,
+        )
+
+    def revoke_api_key(self, username: str, key_id: str) -> bool:
+        try:
+            entity = (
+                self._table.get_entity("api-keys", key_id)
+                if self.is_cloud_backed else self._local_api_keys.get(key_id)
+            )
+        except ResourceNotFoundError:
+            return False
+        if entity is None or entity["created_by"] != username:
+            return False
+        if not entity.get("revoked_at"):
+            revoked_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            if self.is_cloud_backed:
+                self._table.update_entity(
+                    {"PartitionKey": "api-keys", "RowKey": key_id, "revoked_at": revoked_at},
+                    mode=UpdateMode.MERGE,
+                )
+            else:
+                entity["revoked_at"] = revoked_at
+        return True
 
     def get_image(self, blob_name: str) -> tuple[bytes, str] | None:
         if not self.is_cloud_backed:

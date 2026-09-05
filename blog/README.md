@@ -116,6 +116,29 @@ The `/api/author/posts` endpoints require each author's `X-API-Key`; browser
 cookies alone do not authorize API requests. Password changes currently happen
 through configuration, not through a web password-change page.
 
+### Admin API key management
+
+The account named `admin` can open **Author studio → API keys** at
+`/author/api-keys` to create named keys, view their public identifiers and
+creation dates, and revoke them. Other author accounts cannot manage keys.
+Creation and revocation require a signed browser session and a CSRF token.
+
+Each key contains 32 cryptographically random secret bytes and a unique ID.
+The complete key is shown only in the creation response (marked `no-store`);
+copy it into a password manager before leaving. There is no retrieval endpoint.
+Only a SHA-256 hash, public identifier, name, creator, and creation/revocation
+timestamps are persisted. Keys are stored in the `api-keys` partition of the
+existing posts table, accessed via managed identity; no extra infrastructure or
+configuration is needed. Locally they are in memory and reset on restart.
+Revocation is permanent; create a new key to replace a revoked or lost key.
+
+**Scope:** this implements key management only. Newly managed keys are not
+connected to any API authentication yet and grant no API access. Existing
+legacy API endpoints and their `AUTHOR_CONFIG` authentication are unchanged;
+their keys are not listed or revoked by this page. Future API integration must
+check the stored hash and revocation state on every request. Keep full keys
+out of source control, logs, URLs, and chat.
+
 Azure deployment settings are injected by Bicep. For optional local Azure Storage access, copy `.env.example` to `.env`, authenticate with `az login`, and export the values into your shell. The example file contains no secrets.
 
 | Setting | Purpose |

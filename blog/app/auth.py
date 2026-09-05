@@ -24,6 +24,10 @@ class Author:
     password_hash: str
     api_key_hash: str
 
+    @property
+    def is_admin(self) -> bool:
+        return self.username == "admin"
+
 
 class AuthorAuth:
     def __init__(self, raw_config: str = "") -> None:

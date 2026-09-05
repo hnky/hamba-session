@@ -16,16 +16,24 @@
 </head>
 <body class="font-sans text-ink antialiased">
   <header class="absolute inset-x-0 top-0 z-20 text-white">
-    <nav class="mx-auto flex max-w-7xl items-center justify-between px-6 py-7 lg:px-8" aria-label="Main navigation">
+    <nav class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-7 lg:px-8" aria-label="Main navigation">
       <a href="/" class="font-display text-3xl font-bold tracking-tight">Hamba<span class="text-coral">.</span></a>
-      <a href="/#journeys" class="rounded-full border border-white/40 bg-white/10 px-5 py-2 text-sm font-medium backdrop-blur transition hover:bg-white hover:text-forest">Explore journeys</a>
+      <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+        {% if author_signed_in %}
+        <a href="/author/posts" aria-label="Admin · Manage posts" class="inline-flex items-center gap-2 rounded-full bg-sand px-4 py-2 text-sm font-semibold text-forest shadow-sm transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">
+          <span aria-hidden="true" class="h-2 w-2 rounded-full bg-forest"></span>
+          Admin<span aria-hidden="true">·</span>Manage posts
+        </a>
+        {% endif %}
+        <a href="/#journeys" class="rounded-full border border-white/40 bg-white/10 px-5 py-2 text-sm font-medium backdrop-blur transition hover:bg-white hover:text-forest">Explore journeys</a>
+      </div>
     </nav>
   </header>
   <main>{% block content %}{% endblock %}</main>
   <footer class="bg-forest text-white">
     <div class="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-12 sm:flex-row sm:items-end sm:justify-between lg:px-8">
       <div><p class="font-display text-3xl font-bold">Hamba<span class="text-coral">.</span></p><p class="mt-2 text-sm text-white/65">Travel and stay well.</p></div>
-      <p class="text-sm text-white/50">Stories for moving gently through the world.</p>
+      <div class="text-sm text-white/65"><p>Stories for moving gently through the world.</p><a href="/author/posts" class="mt-3 inline-block underline underline-offset-4 hover:text-white">Author login</a></div>
     </div>
   </footer>
 </body>

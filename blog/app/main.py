@@ -8,12 +8,12 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .repository import BlogRepository
+from .routers.author import api_router, author_navigation_context, router as author_router
+from .storage.posts import posts as repository
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent
-repository = BlogRepository()
 
 
 @asynccontextmanager
@@ -27,7 +27,12 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Hamba", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
-templates = Jinja2Templates(directory=BASE_DIR / "templates")
+templates = Jinja2Templates(
+    directory=BASE_DIR / "templates", context_processors=[author_navigation_context]
+)
+app.state.templates = templates
+app.include_router(author_router)
+app.include_router(api_router)
 
 
 @app.get("/health")

@@ -1,0 +1,19 @@
+{% extends "author/layout.html" %}
+{% block title %}Author login — Hamba{% endblock %}
+{% block heading %}A place for your next story.{% endblock %}
+{% block lead %}Sign in to create and edit journeys, share destinations, and keep your stories up to date.{% endblock %}
+{% block studio %}
+<div class="mx-auto max-w-md rounded-3xl border border-forest/10 bg-white p-8 shadow-sm">
+  <h2 class="font-display text-2xl text-forest">Welcome back</h2>
+  {% if not configured %}
+  <p role="status" class="mt-5 rounded-xl bg-sand p-4 text-sm">Author login is not configured. Ask the site administrator to configure author access.</p>
+  {% endif %}
+  {% if error %}<p role="alert" class="mt-5 rounded-xl bg-red-50 p-4 text-red-800">{{ error }}</p>{% endif %}
+  <form method="post" action="/author/login" class="mt-6 space-y-5">
+    <div><label for="username" class="block text-sm font-semibold">Username</label><input id="username" name="username" autocomplete="username" required maxlength="100" class="mt-2 w-full rounded-xl border border-forest/25 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-coral" {% if not configured %}disabled{% endif %}></div>
+    <div><label for="password" class="block text-sm font-semibold">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required class="mt-2 w-full rounded-xl border border-forest/25 bg-white px-4 py-3 focus:outline-none focus:ring-2 focus:ring-coral" {% if not configured %}disabled{% endif %}></div>
+    <button type="submit" class="w-full rounded-full bg-forest px-6 py-3 font-semibold text-white transition hover:bg-ink disabled:opacity-40" {% if not configured %}disabled{% endif %}>Sign in</button>
+  </form>
+  <a href="/" class="mt-6 inline-block text-sm text-forest underline underline-offset-4">Back to the blog</a>
+</div>
+{% endblock %}

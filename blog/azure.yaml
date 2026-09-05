@@ -4,6 +4,8 @@ metadata:
 infra:
   provider: bicep
   path: infra
+# Optional AUTHOR_CONFIG is passed as a secure Bicep parameter and injected
+# through a Container Apps secret; never put its value in this file.
 services:
   web:
     project: .

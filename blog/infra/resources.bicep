@@ -7,6 +7,9 @@ param identityName string
 param blobContainerName string
 param tableName string
 
+@secure()
+param authorConfig string = ''
+
 var blobDataContributorRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
 var tableDataContributorRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
@@ -148,6 +151,12 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     managedEnvironmentId: containerEnvironment.id
     configuration: {
       activeRevisionsMode: 'Single'
+      secrets: empty(authorConfig) ? [] : [
+        {
+          name: 'author-config'
+          value: authorConfig
+        }
+      ]
       ingress: {
         external: true
         targetPort: 8000
@@ -166,7 +175,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
         {
           name: 'web'
           image: 'mcr.microsoft.com/k8se/quickstart:latest'
-          env: [
+          env: concat([
             {
               name: 'AZURE_CLIENT_ID'
               value: identity.properties.clientId
@@ -187,7 +196,12 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'AZURE_STORAGE_TABLE_NAME'
               value: tableName
             }
-          ]
+          ], empty(authorConfig) ? [] : [
+            {
+              name: 'AUTHOR_CONFIG'
+              secretRef: 'author-config'
+            }
+          ])
           resources: {
             cpu: json('0.5')
             memory: '1Gi'

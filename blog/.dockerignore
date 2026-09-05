@@ -7,5 +7,6 @@ __pycache__
 *.py[cod]
 tests
 .env
+.author-config.json
 README.md
 infra

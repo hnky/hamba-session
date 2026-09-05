@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import socket
 from urllib.parse import urljoin, urlparse
+from uuid import uuid4
 
 import httpx
 from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
@@ -13,6 +14,7 @@ from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient, ContentSettings
 
 from .content import SAMPLE_POSTS
+from .storage.images import normalize_upload
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,9 @@ class BlogRepository:
 
         with httpx.Client(timeout=15, follow_redirects=True) as client:
             for post in SAMPLE_POSTS:
+                # Seeds are initial content, never an update to an author's work.
+                if self.get_post(post["slug"]) is not None:
+                    continue
                 blob_client = self._container.get_blob_client(post["image_blob"])
                 blob_properties = blob_client.get_blob_properties() if blob_client.exists() else None
                 is_fallback = (
@@ -72,8 +77,8 @@ class BlogRepository:
                         content_settings=ContentSettings(content_type=content_type),
                     )
 
-                self._table.upsert_entity(
-                    {
+                try:
+                    self._table.create_entity({
                         "PartitionKey": "published",
                         "RowKey": post["slug"],
                         "title": post["title"],
@@ -82,8 +87,10 @@ class BlogRepository:
                         "image_blob": post["image_blob"],
                         "story": json.dumps(post["story"]),
                         "source_url": post["source_url"],
-                    }
-                )
+                    })
+                except ResourceExistsError:
+                    # Another replica may have seeded this row first.
+                    pass
 
     @staticmethod
     def _normalize(post: dict) -> dict:
@@ -175,10 +182,13 @@ class BlogRepository:
                     return b"".join(chunks), content_type
         raise ValueError("Image redirected too many times")
 
-    def save_post(self, post: dict, image_url: str | None = None) -> dict:
+    def save_post(self, post: dict, image_url: str | None = None, image_upload: bytes | None = None) -> dict:
         image_blob = str(post.get("image_blob") or f"{post['slug']}.jpg")
-        if image_url:
-            image, content_type = self._download_image(image_url)
+        if image_upload is not None or image_url:
+            image, content_type = normalize_upload(image_upload) if image_upload is not None else self._download_image(image_url)
+            if image_upload is not None:
+                # Unique keys avoid stale public image caches after replacement.
+                image_blob = f"{post['slug']}-{uuid4().hex}.jpg"
             if self.is_cloud_backed:
                 self._container.get_blob_client(image_blob).upload_blob(
                     image,
@@ -196,7 +206,7 @@ class BlogRepository:
             "image_blob": image_blob,
             "story": list(post["story"]),
             "source_url": str(post.get("source_url", "")),
-            "image_source": str(image_url or post.get("image_source", "")),
+            "image_source": "" if image_upload is not None else str(image_url or post.get("image_source", "")),
             "author": str(post["author"]),
         }
         if not self.is_cloud_backed:

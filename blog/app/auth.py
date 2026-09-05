@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import json
 import os
+from pathlib import Path
 import secrets
 import time
 
@@ -32,6 +33,8 @@ class AuthorAuth:
             return
         try:
             config = json.loads(raw_config)
+            if not isinstance(config, dict):
+                return
             session_secret = config.get("session_secret", "")
             users = config.get("users", [])
             if not isinstance(session_secret, str) or len(session_secret) < 32:
@@ -39,12 +42,16 @@ class AuthorAuth:
             if not isinstance(users, list):
                 return
             for user in users:
+                if not isinstance(user, dict):
+                    raise ValueError("Invalid author entry")
                 author = Author(
                     username=str(user["username"]),
                     password_hash=str(user["password_hash"]),
                     api_key_hash=str(user["api_key_hash"]),
                 )
                 self._authors[author.username] = author
+            if not all(author.username and author.password_hash and author.api_key_hash for author in self._authors.values()):
+                raise ValueError("Incomplete author entry")
             self._session_secret = session_secret.encode("utf-8")
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
             self._authors = {}
@@ -146,4 +153,13 @@ class AuthorAuth:
 
 @lru_cache(maxsize=1)
 def get_auth() -> AuthorAuth:
-    return AuthorAuth(os.getenv("AUTHOR_CONFIG", ""))
+    raw_config = os.getenv("AUTHOR_CONFIG")
+    # The local bootstrap file must never enable default credentials in Azure.
+    if raw_config is None and not any(
+        os.getenv(name)
+        for name in ("CONTAINER_APP_NAME", "CONTAINER_APP_REVISION", "AZURE_STORAGE_TABLE_URL")
+    ):
+        config_path = Path(__file__).resolve().parents[1] / ".author-config.json"
+        if config_path.is_file():
+            raw_config = config_path.read_text(encoding="utf-8")
+    return AuthorAuth(raw_config or "")

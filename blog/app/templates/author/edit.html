@@ -1,0 +1,36 @@
+{% extends "author/layout.html" %}
+{% block title %}{{ 'Edit story' if editing else 'New story' }} — Hamba{% endblock %}
+{% block heading %}{{ 'Refine your journey.' if editing else 'Begin a new journey.' }}{% endblock %}
+{% block lead %}Give your story a title and a welcoming introduction. Add a destination image if you like. Saving publishes it immediately.{% endblock %}
+{% block studio %}
+{% set values = post or {} %}
+{% if error %}<p role="alert" class="mb-6 rounded-xl bg-red-50 p-4 text-red-800">{{ error }}</p>{% endif %}
+<form method="post" enctype="multipart/form-data" action="{{ '/author/posts/' ~ values.slug ~ '/edit' if editing else '/author/posts/new' }}" class="space-y-6 rounded-3xl border border-forest/10 bg-white p-6 shadow-sm sm:p-9">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div><label for="title" class="block font-semibold">Story title</label><input id="title" name="title" value="{{ values.get('title', '') }}" required maxlength="160" class="mt-2 w-full rounded-xl border border-forest/25 px-4 py-3 focus:ring-2 focus:ring-coral"></div>
+  <div class="grid gap-6 sm:grid-cols-2">
+    <div><label for="slug" class="block font-semibold">URL slug</label><input id="slug" name="slug" value="{{ values.get('slug', '') }}" required pattern="[a-z0-9]+(-[a-z0-9]+)*" aria-describedby="slug-help" {% if editing %}readonly{% endif %} class="mt-2 w-full rounded-xl border border-forest/25 px-4 py-3 read-only:bg-sand"><p id="slug-help" class="mt-2 text-xs text-ink/60">Lowercase words separated by hyphens. Cannot change after publication.</p></div>
+    <div><label for="published_at" class="block font-semibold">Publication date</label><input id="published_at" name="published_at" type="date" value="{{ values.get('published_at', today) }}" required class="mt-2 w-full rounded-xl border border-forest/25 px-4 py-3"></div>
+  </div>
+  <div><label for="lead" class="block font-semibold">Introduction</label><textarea id="lead" name="lead" required maxlength="400" rows="3" class="mt-2 w-full rounded-xl border border-forest/25 px-4 py-3">{{ values.get('lead', '') }}</textarea></div>
+  <div><label for="story" class="block font-semibold">Story</label><p id="story-help" class="mt-1 text-sm text-ink/60">Separate paragraphs with a blank line. Plain text only; up to 4,000 characters per paragraph.</p><textarea id="story" name="story" required rows="14" aria-describedby="story-help" class="mt-2 w-full rounded-xl border border-forest/25 px-4 py-3 leading-7">{{ values.get('story', '') if values.get('story', '') is string else values.story|join('\n\n') }}</textarea></div>
+  {% if editing %}<img src="/images/{{ values.image_blob }}" onerror="this.onerror=null;this.src='/static/placeholder.svg'" alt="Current destination image" class="h-48 w-full rounded-xl object-cover">{% endif %}
+  <div>
+    <label for="image_file" class="block font-semibold">{{ 'Replace destination image (optional)' if editing else 'Destination image (optional)' }}</label>
+    <div id="image-drop-zone" class="mt-3 rounded-2xl border-2 border-dashed border-forest/30 bg-sand/40 p-6 text-center transition">
+      <p class="font-display text-2xl text-forest">Drop your destination here</p>
+      <p id="upload-help" class="mt-2 text-sm text-ink/70">Drag one image here or choose a file. JPEG, PNG, or WebP · up to 8 MB and 20 megapixels.</p>
+      <input id="image_file" name="image_file" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="upload-help upload-status" class="mt-5 block w-full text-sm file:mr-4 file:rounded-full file:border-0 file:bg-forest file:px-5 file:py-3 file:font-semibold file:text-white focus:outline-none focus:ring-2 focus:ring-coral">
+      <img id="upload-preview" alt="Selected destination image preview" hidden class="mx-auto mt-5 max-h-72 rounded-xl object-contain">
+      <p id="upload-status" role="status" aria-live="polite" class="mt-3 text-sm text-forest"></p>
+      <button id="remove-upload" type="button" hidden class="mt-3 rounded-full border border-forest/30 px-4 py-2 text-sm hover:bg-sand">Remove selected image</button>
+    </div>
+    {% if error %}<p class="mt-2 text-sm text-ink/70">If you selected a file, choose it again before saving.</p>{% endif %}
+    <noscript><p class="mt-2 text-sm">Use the file picker to upload an image. Drag-and-drop and preview require JavaScript.</p></noscript>
+  </div>
+  <div><label for="image_url" class="block font-semibold">Or use an image URL (optional)</label><input id="image_url" name="image_url" type="url" value="{{ values.get('image_url', '') }}" aria-describedby="image-help" class="mt-2 w-full rounded-xl border border-forest/25 px-4 py-3"><p id="image-help" class="mt-2 text-xs text-ink/60">Public HTTP or HTTPS image, maximum 8 MB. An uploaded file takes priority. {{ 'Leave both empty to keep the existing image.' if editing else 'Leave both empty to use the default placeholder.' }}</p></div>
+  <div><label for="source_url" class="block font-semibold">Source URL (optional)</label><input id="source_url" name="source_url" type="url" value="{{ values.get('source_url', '') }}" class="mt-2 w-full rounded-xl border border-forest/25 px-4 py-3"></div>
+  <div class="flex flex-wrap items-center gap-5 border-t border-forest/10 pt-6"><button type="submit" class="rounded-full bg-forest px-7 py-3 font-semibold text-white hover:bg-ink">{{ 'Save changes' if editing else 'Publish story' }}</button><a href="/author/posts" class="text-sm text-forest underline underline-offset-4">Cancel</a></div>
+</form>
+<script src="/static/author-upload.js" defer></script>
+{% endblock %}

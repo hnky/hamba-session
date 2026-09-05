@@ -3,22 +3,60 @@
 from __future__ import annotations
 
 from datetime import date
+import hmac
 import json
 import re
 from urllib.parse import parse_qs
+from urllib.parse import urlparse
 
+import httpx
 from fastapi import APIRouter, Header, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from starlette.datastructures import UploadFile
 
 from ..auth import Author, SESSION_COOKIE, SESSION_MAX_AGE, get_auth
 from ..storage.posts import posts
+from ..storage.images import MAX_IMAGE_BYTES
 
 router = APIRouter(prefix="/author", tags=["author"])
 api_router = APIRouter(prefix="/api/author", tags=["author-api"])
 SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 MAX_FORM_BYTES = 64 * 1024
+
+
+async def _read_post_form(request: Request) -> tuple[dict[str, str], bytes | None]:
+    if request.headers.get("content-type", "").split(";", 1)[0] != "multipart/form-data":
+        return await _read_form(request), None
+    # Bound the whole request before parsing, including clients using chunked
+    # transfer encoding. Oversized requests never allocate multipart temp files.
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAX_IMAGE_BYTES + MAX_FORM_BYTES:
+            raise HTTPException(status_code=413, detail="Upload exceeds the 8 MB image and 64 KB form limit")
+        body.extend(chunk)
+
+    async def receive() -> dict:
+        return {"type": "http.request", "body": bytes(body), "more_body": False}
+
+    bounded = Request(request.scope, receive)
+    async with bounded.form(max_files=1, max_fields=15, max_part_size=MAX_FORM_BYTES) as data:
+        form: dict[str, str] = {}
+        image = None
+        for key, value in data.multi_items():
+            if isinstance(value, UploadFile):
+                if key != "image_file":
+                    raise HTTPException(status_code=400, detail="Unexpected file field")
+                if value.filename:
+                    image = await value.read(MAX_IMAGE_BYTES + 1)
+                    if len(image) > MAX_IMAGE_BYTES:
+                        raise HTTPException(status_code=413, detail="Image exceeds the 8 MB limit")
+            else:
+                form[key] = value
+        if sum(len(value.encode()) for value in form.values()) > MAX_FORM_BYTES:
+            raise HTTPException(status_code=413, detail="Form is too large")
+        return form, image
 
 
 def _templates(request: Request) -> Jinja2Templates:
@@ -28,15 +66,25 @@ def _templates(request: Request) -> Jinja2Templates:
 async def _read_form(request: Request) -> dict[str, str]:
     if request.headers.get("content-type", "").split(";", 1)[0] != "application/x-www-form-urlencoded":
         raise HTTPException(status_code=415, detail="Expected a URL-encoded form")
-    body = await request.body()
-    if len(body) > MAX_FORM_BYTES:
-        raise HTTPException(status_code=413, detail="Form is too large")
-    parsed = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > MAX_FORM_BYTES:
+            raise HTTPException(status_code=413, detail="Form is too large")
+    try:
+        parsed = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid form encoding") from exc
     return {key: values[-1] for key, values in parsed.items()}
 
 
 def _session(request: Request) -> tuple[Author, str] | None:
     return get_auth().read_session(request.cookies.get(SESSION_COOKIE))
+
+
+def author_navigation_context(request: Request) -> dict[str, bool]:
+    """Expose only verified sign-in state to the shared navigation."""
+    return {"author_signed_in": _session(request) is not None}
 
 
 def _require_session(request: Request) -> tuple[Author, str] | RedirectResponse:
@@ -47,17 +95,21 @@ def _require_session(request: Request) -> tuple[Author, str] | RedirectResponse:
 
 
 def _check_csrf(form: dict[str, str], expected: str) -> None:
-    if not expected or form.get("csrf_token") != expected:
+    if not expected or not hmac.compare_digest(form.get("csrf_token", "").encode(), expected.encode()):
         raise HTTPException(status_code=403, detail="Invalid form token")
 
 
-def _post_values(data: dict[str, object], author: Author, existing: dict | None = None) -> tuple[dict, str | None]:
+def _post_values(data: dict[str, object], author: Author, existing: dict | None = None, has_upload: bool = False) -> tuple[dict, str | None]:
     slug = str(existing["slug"] if existing else data.get("slug", "")).strip().lower()
     title = str(data.get("title", "")).strip()
     lead = str(data.get("lead", "")).strip()
     published_at = str(data.get("published_at", "")).strip()
     source_url = str(data.get("source_url", "")).strip()
     image_url = str(data.get("image_url", "")).strip() or None
+    if source_url:
+        source = urlparse(source_url)
+        if source.scheme not in {"http", "https"} or not source.hostname:
+            raise ValueError("Source URL must use HTTP or HTTPS")
     raw_story = data.get("story", "")
     if isinstance(raw_story, list):
         story = [str(paragraph).strip() for paragraph in raw_story if str(paragraph).strip()]
@@ -76,9 +128,6 @@ def _post_values(data: dict[str, object], author: Author, existing: dict | None 
         date.fromisoformat(published_at)
     except ValueError as exc:
         raise ValueError("Publication date must use YYYY-MM-DD") from exc
-    if not existing and not image_url:
-        raise ValueError("A destination image URL is required for a new post")
-
     return (
         {
             "slug": slug,
@@ -86,6 +135,7 @@ def _post_values(data: dict[str, object], author: Author, existing: dict | None 
             "lead": lead,
             "published_at": published_at,
             "image_blob": existing.get("image_blob") if existing else f"{slug}.jpg",
+            "image_source": existing.get("image_source", "") if existing else "",
             "story": story,
             "source_url": source_url,
             "author": author.username,
@@ -114,6 +164,11 @@ async def login_page(request: Request) -> Response:
 
 @router.post("/login", response_class=Response)
 async def login(request: Request) -> Response:
+    origin = request.headers.get("origin")
+    if origin and origin.rstrip("/") != str(request.base_url).rstrip("/"):
+        raise HTTPException(status_code=403, detail="Invalid login origin")
+    if not get_auth().is_configured:
+        raise HTTPException(status_code=503, detail="Author login is not configured")
     form = await _read_form(request)
     author = await run_in_threadpool(
         get_auth().verify_login, form.get("username", ""), form.get("password", "")
@@ -173,7 +228,7 @@ async def new_post_page(request: Request) -> Response:
     return _templates(request).TemplateResponse(
         request=request,
         name="author/edit.html",
-        context={"post": None, "author": author, "csrf_token": csrf, "error": None},
+        context={"post": None, "author": author, "csrf_token": csrf, "error": None, "editing": False, "today": date.today().isoformat()},
     )
 
 
@@ -183,19 +238,19 @@ async def create_post(request: Request) -> Response:
     if isinstance(current, RedirectResponse):
         return current
     author, csrf = current
-    form = await _read_form(request)
+    form, image_upload = await _read_post_form(request)
     _check_csrf(form, csrf)
     try:
-        post, image_url = _post_values(form, author)
+        post, image_url = _post_values(form, author, has_upload=image_upload is not None)
         if await run_in_threadpool(posts.get_post, post["slug"]):
             raise ValueError("A post with this slug already exists")
-        await run_in_threadpool(posts.save_post, post, image_url)
-    except (ValueError, HTTPException) as exc:
-        message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        await run_in_threadpool(posts.save_post, post, image_url, image_upload)
+    except (ValueError, HTTPException, httpx.HTTPError) as exc:
+        message = "Could not download the destination image." if isinstance(exc, httpx.HTTPError) else (exc.detail if isinstance(exc, HTTPException) else str(exc))
         return _templates(request).TemplateResponse(
             request=request,
             name="author/edit.html",
-            context={"post": form, "author": author, "csrf_token": csrf, "error": message},
+            context={"post": form, "author": author, "csrf_token": csrf, "error": message, "editing": False},
             status_code=400,
         )
     return RedirectResponse("/author/posts", status_code=status.HTTP_303_SEE_OTHER)
@@ -213,7 +268,7 @@ async def edit_post_page(request: Request, slug: str) -> Response:
     return _templates(request).TemplateResponse(
         request=request,
         name="author/edit.html",
-        context={"post": post, "author": author, "csrf_token": csrf, "error": None},
+        context={"post": post, "author": author, "csrf_token": csrf, "error": None, "editing": True},
     )
 
 
@@ -223,21 +278,21 @@ async def update_post(request: Request, slug: str) -> Response:
     if isinstance(current, RedirectResponse):
         return current
     author, csrf = current
-    form = await _read_form(request)
+    form, image_upload = await _read_post_form(request)
     _check_csrf(form, csrf)
     existing = await run_in_threadpool(posts.get_post, slug)
     if existing is None:
         raise HTTPException(status_code=404, detail="Post not found")
     try:
-        post, image_url = _post_values(form, author, existing)
-        await run_in_threadpool(posts.save_post, post, image_url)
-    except (ValueError, HTTPException) as exc:
-        message = exc.detail if isinstance(exc, HTTPException) else str(exc)
+        post, image_url = _post_values(form, author, existing, has_upload=image_upload is not None)
+        await run_in_threadpool(posts.save_post, post, image_url, image_upload)
+    except (ValueError, HTTPException, httpx.HTTPError) as exc:
+        message = "Could not download the destination image." if isinstance(exc, httpx.HTTPError) else (exc.detail if isinstance(exc, HTTPException) else str(exc))
         display_post = {**existing, **form}
         return _templates(request).TemplateResponse(
             request=request,
             name="author/edit.html",
-            context={"post": display_post, "author": author, "csrf_token": csrf, "error": message},
+            context={"post": display_post, "author": author, "csrf_token": csrf, "error": message, "editing": True},
             status_code=400,
         )
     return RedirectResponse("/author/posts", status_code=status.HTTP_303_SEE_OTHER)
@@ -254,10 +309,14 @@ async def api_create_post(request: Request, x_api_key: str | None = Header(defau
     author = _api_author(x_api_key)
     try:
         payload = await request.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Expected a JSON object")
         post, image_url = _post_values(payload, author)
         if await run_in_threadpool(posts.get_post, post["slug"]):
             raise ValueError("A post with this slug already exists")
         saved = await run_in_threadpool(posts.save_post, post, image_url)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=400, detail="Could not download the destination image") from exc
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return JSONResponse(saved, status_code=201)
@@ -273,8 +332,12 @@ async def api_update_post(
         raise HTTPException(status_code=404, detail="Post not found")
     try:
         payload = await request.json()
+        if not isinstance(payload, dict):
+            raise ValueError("Expected a JSON object")
         post, image_url = _post_values(payload, author, existing)
         saved = await run_in_threadpool(posts.save_post, post, image_url)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=400, detail="Could not download the destination image") from exc
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return JSONResponse(saved)

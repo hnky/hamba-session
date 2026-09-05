@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="relative overflow-hidden bg-forest px-6 pb-14 pt-36 text-white">
+  <img src="/static/placeholder.svg" alt="A quiet destination landscape" class="absolute inset-0 h-full w-full object-cover opacity-20">
+  <div class="relative mx-auto max-w-5xl">
+    <p class="text-xs font-semibold uppercase tracking-[.25em] text-orange-100">Hamba · Author studio</p>
+    <h1 class="mt-4 font-display text-4xl sm:text-5xl">{% block heading %}{% endblock %}</h1>
+    <p class="mt-4 max-w-2xl text-lg text-white/80">{% block lead %}{% endblock %}</p>
+  </div>
+</section>
+<section class="mx-auto min-h-[45vh] max-w-5xl px-6 py-12">
+  {% if author %}
+  <div class="mb-8 flex flex-wrap items-center justify-between gap-4 border-b border-forest/15 pb-5">
+    <a href="/author/posts" class="font-semibold text-forest hover:underline">Your stories</a>
+    <form action="/author/logout" method="post" class="flex items-center gap-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <span class="text-sm text-ink/70">Signed in as {{ author.username }}</span>
+      <button type="submit" class="rounded-full border border-forest/30 px-4 py-2 text-sm hover:bg-sand">Log out</button>
+    </form>
+  </div>
+  {% endif %}
+  {% block studio %}{% endblock %}
+</section>
+{% endblock %}

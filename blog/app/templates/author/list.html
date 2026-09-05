@@ -1,0 +1,23 @@
+{% extends "author/layout.html" %}
+{% block title %}Your stories — Hamba{% endblock %}
+{% block heading %}Stories worth sharing.{% endblock %}
+{% block lead %}Create a new journey or return to a published story. Saved changes appear immediately on the blog.{% endblock %}
+{% block studio %}
+<div class="mb-8 flex items-center justify-between gap-4">
+  <h2 class="font-display text-2xl">Published journeys <span class="text-ink/50">({{ posts|length }})</span></h2>
+  <a href="/author/posts/new" class="rounded-full bg-forest px-5 py-3 text-sm font-semibold text-white hover:bg-ink">New story</a>
+</div>
+<div class="grid gap-6 sm:grid-cols-2">
+  {% for post in posts %}
+  <article class="overflow-hidden rounded-2xl border border-forest/10 bg-white shadow-sm">
+    <img src="/images/{{ post.image_blob }}" onerror="this.onerror=null;this.src='/static/placeholder.svg'" alt="Destination view for {{ post.title }}" class="h-48 w-full object-cover" loading="lazy">
+    <div class="p-6">
+      <time datetime="{{ post.published_at }}" class="text-xs uppercase tracking-widest text-ink/60">{{ post.published_at }}</time>
+      <h3 class="mt-3 font-display text-2xl">{{ post.title }}</h3>
+      <p class="mt-3 text-sm leading-6 text-ink/70">{{ post.lead }}</p>
+      <div class="mt-6 flex gap-5 text-sm font-semibold text-forest"><a href="/author/posts/{{ post.slug }}/edit" class="underline underline-offset-4">Edit story</a><a href="/posts/{{ post.slug }}" class="hover:underline">View published →</a></div>
+    </div>
+  </article>
+  {% else %}<p class="rounded-2xl bg-sand p-8">No stories yet. Start your first journey.</p>{% endfor %}
+</div>
+{% endblock %}

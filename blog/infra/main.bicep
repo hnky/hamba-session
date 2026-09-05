@@ -4,6 +4,10 @@ targetScope = 'subscription'
 param environmentName string
 param location string
 
+@secure()
+@description('Author session secret and password/API-key hashes. Empty disables author login.')
+param authorConfig string = ''
+
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = {
   'azd-env-name': environmentName
@@ -33,6 +37,7 @@ module resources 'resources.bicep' = {
     identityName: identityName
     blobContainerName: blobContainerName
     tableName: tableName
+    authorConfig: authorConfig
   }
 }
 

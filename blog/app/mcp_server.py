@@ -2,10 +2,16 @@
 
 The server deliberately exposes one immediately-publishing tool. Managed keys
 come from the admin UI; legacy AUTHOR_CONFIG API keys remain REST-only.
+
+Request flow: check the host and Bearer key, validate the tool arguments,
+resolve the author, and create the story without overwriting an existing one.
+Client approval happens outside this server; an accepted call publishes immediately.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 import logging
 import os
 from typing import Annotated
@@ -20,7 +26,7 @@ from fastmcp.server.dependencies import get_access_token
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
-from .auth import get_auth
+from .auth import Author, get_auth
 from .repository import DuplicatePostError
 from .routers.author import post_values
 from .storage.posts import posts
@@ -29,20 +35,32 @@ logger = logging.getLogger(__name__)
 
 
 def _trusted_hosts() -> list[str]:
-    configured = [host.strip() for host in os.getenv("MCP_ALLOWED_HOSTS", "").split(",")]
-    return ["localhost", "127.0.0.1", "testserver", *(host for host in configured if host)]
+    """Allow local/test server names plus deployed names supplied by configuration."""
+    # These are destination server hostnames, not a list of permitted clients.
+    hosts = ["localhost", "127.0.0.1", "testserver"]
+    for host in os.getenv("MCP_ALLOWED_HOSTS", "").split(","):
+        if host.strip():
+            hosts.append(host.strip())
+    return hosts
 
 
 class ManagedApiKeyVerifier(TokenVerifier):
+    """Authenticate managed keys and restrict MCP access to admins."""
+
     async def verify_token(self, token: str) -> AccessToken | None:
+        """Return a verified identity, or None so the transport rejects the request."""
         try:
+            # The repository checks the stored key hash and revocation status.
+            # Its storage calls are synchronous, so keep them off the event loop.
             username = await run_in_threadpool(posts.verify_api_key, token)
             author = get_auth().get_author(username) if username else None
         except Exception:
+            # Fail closed: a storage/configuration failure must never grant access.
             logger.exception("Managed API key verification failed")
             return None
         if author is None or not author.is_admin:
             return None
+        # Carry the verified username into the tool's request context.
         return AccessToken(
             token=token,
             client_id=f"hamba-managed-key:{author.username}",
@@ -51,6 +69,41 @@ class ManagedApiKeyVerifier(TokenVerifier):
         )
 
 
+def _current_author() -> Author:
+    """Resolve story attribution; admin authorization belongs to the verifier."""
+    # Read identity from the authenticated request, never from tool arguments.
+    token = get_access_token()
+    if token is None or not token.subject:
+        raise ToolError("Authentication is required to publish a story.")
+
+    author = get_auth().get_author(token.subject)
+    if author is None:
+        raise ToolError("Authentication is required to publish a story.")
+    return author
+
+
+@contextmanager
+def _publishing_errors() -> Iterator[None]:
+    """Translate publishing failures into safe MCP errors; log internal details."""
+    try:
+        yield
+    except DuplicatePostError as exc:
+        raise ToolError("A story with this slug already exists.") from exc
+    except ValueError as exc:
+        raise ToolError(str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise ToolError("Could not download the destination image.") from exc
+    except AzureError as exc:
+        logger.exception("Story storage failed")
+        raise ToolError("Story storage is unavailable. Please try again.") from exc
+    except Exception as exc:
+        logger.exception("Unexpected story publication failure")
+        raise ToolError("The story could not be published. Please try again.") from exc
+
+
+# These types describe the tool's public input schema to MCP clients.
+# Field constraints enforce shape and size; post_values checks content semantics
+# such as valid dates and URLs, using the same rules as the author UI and REST API.
 Slug = Annotated[
     str,
     Field(
@@ -61,12 +114,22 @@ Slug = Annotated[
         examples=["uganda-where-the-earth-breathes-green"],
     ),
 ]
-Title = Annotated[str, Field(min_length=1, max_length=160, description="Story title, up to 160 characters.")]
-Lead = Annotated[str, Field(min_length=1, max_length=400, description="Story introduction, up to 400 characters.")]
+Title = Annotated[
+    str,
+    Field(min_length=1, max_length=160, description="Story title, up to 160 characters."),
+]
+Lead = Annotated[
+    str,
+    Field(min_length=1, max_length=400, description="Story introduction, up to 400 characters."),
+]
 Paragraph = Annotated[str, Field(min_length=1, max_length=4000)]
 Story = Annotated[
     list[Paragraph],
-    Field(min_length=1, max_length=100, description="Between 1 and 100 nonempty paragraphs; each may contain up to 4,000 characters."),
+    Field(
+        min_length=1,
+        max_length=100,
+        description="Between 1 and 100 nonempty paragraphs; each may contain up to 4,000 characters.",
+    ),
 ]
 OptionalUrl = Annotated[
     str | None,
@@ -87,22 +150,34 @@ PublicationDate = Annotated[
 
 
 class AddStoryResult(BaseModel):
+    """Expose only the published story's identifier, title, and relative page URL."""
+
     slug: str
     title: str
     path: str
 
 
+# Authentication applies to the MCP server, including tool discovery and calls.
+# Unexpected errors are masked; deliberate ToolError messages remain client-visible.
 mcp = FastMCP(
     name="Hamba Publishing",
-    instructions="Publish new Hamba travel stories. Every tool call writes immediately and requires approval.",
+    instructions=(
+        "Publish new Hamba travel stories. "
+        "Every tool call writes immediately and requires approval."
+    ),
     auth=ManagedApiKeyVerifier(),
     mask_error_details=True,
     strict_input_validation=True,
 )
 
 
+# Annotations help clients explain the action; they do not enforce user approval.
+# This tool writes new content and may download an image from an external URL.
 @mcp.tool(
-    description="Create and immediately publish a new Hamba travel story. Rejects an existing slug instead of overwriting it.",
+    description=(
+        "Create and immediately publish a new Hamba travel story. "
+        "Rejects an existing slug instead of overwriting it."
+    ),
     annotations=ToolAnnotations(
         title="Publish a Hamba story",
         readOnlyHint=False,
@@ -120,47 +195,39 @@ async def add_story(
     source_url: OptionalUrl = None,
     image_url: OptionalUrl = None,
 ) -> AddStoryResult:
-    """Create and publish a story immediately after the client approves the call."""
-    access_token = get_access_token()
-    username = access_token.subject if access_token is not None else None
-    author = get_auth().get_author(username) if username else None
-    if author is None or not author.is_admin:
-        raise ToolError("Authentication is required to publish a story.")
+    """Validate and publish a story; the client is responsible for approval."""
+    author = _current_author()
+    # Adapt MCP arguments to the existing shared post validator.
+    values: dict[str, object] = {
+        "slug": slug,
+        "title": title,
+        "lead": lead,
+        "published_at": published_at,
+        "story": story,
+        "source_url": source_url or "",
+        "image_url": image_url or "",
+    }
 
-    try:
-        post, normalized_image_url = post_values(
-            {
-                "slug": slug,
-                "title": title,
-                "lead": lead,
-                "published_at": published_at,
-                "story": story,
-                "source_url": source_url or "",
-                "image_url": image_url or "",
-            },
-            author,
-        )
+    with _publishing_errors():
+        # Normalize content (including datetime -> calendar date) before storage.
+        post, normalized_image_url = post_values(values, author)
+        # Create-only storage rejects duplicate slugs instead of updating a story.
         saved = await run_in_threadpool(posts.create_post, post, normalized_image_url)
-    except DuplicatePostError as exc:
-        raise ToolError("A story with this slug already exists.") from exc
-    except ValueError as exc:
-        raise ToolError(str(exc)) from exc
-    except httpx.HTTPError as exc:
-        raise ToolError("Could not download the destination image.") from exc
-    except AzureError as exc:
-        logger.exception("Story storage failed")
-        raise ToolError("Story storage is unavailable. Please try again.") from exc
-    except Exception as exc:
-        logger.exception("Unexpected story publication failure")
-        raise ToolError("The story could not be published. Please try again.") from exc
 
-    return AddStoryResult(slug=saved["slug"], title=saved["title"], path=f"/posts/{saved['slug']}")
+    return AddStoryResult(
+        slug=saved["slug"],
+        title=saved["title"],
+        path=f"/posts/{saved['slug']}",
+    )
 
 
+# The main FastAPI app serves this authenticated ASGI app at /mcp.
+# Stateless HTTP needs no persistent MCP session between requests.
+# Host/Origin checks add DNS-rebinding protection; Bearer keys authenticate callers.
 mcp_http_app = mcp.http_app(
     path="/mcp",
     stateless_http=True,
     host_origin_protection=True,
     allowed_hosts=_trusted_hosts(),
-    allowed_origins=[],
+    allowed_origins=[],  # Do not add extra browser origins to the transport's policy.
 )

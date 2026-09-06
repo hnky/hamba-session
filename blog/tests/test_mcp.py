@@ -293,6 +293,40 @@ def test_concurrent_callers_do_not_share_authentication(mcp_client: tuple[TestCl
     assert sorted(statuses) == [200, 401]
 
 
+def test_non_admin_key_cannot_publish(
+    mcp_client: tuple[TestClient, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _ = mcp_client
+    auth = _auth("admin", "editor")
+    monkeypatch.setattr(mcp_server, "get_auth", lambda: auth)
+    _, editor_key = repository.create_api_key("editor", "Non-admin")
+
+    response = _modern_request(
+        client,
+        editor_key,
+        "tools/call",
+        {"name": "add_story", "arguments": _story()},
+    )
+    assert response.status_code == 401
+    assert repository.get_post("mcp-story") is None
+
+
+@pytest.mark.parametrize("subject", [None, "", "removed"])
+def test_current_author_requires_known_identity(
+    monkeypatch: pytest.MonkeyPatch, subject: str | None
+) -> None:
+    token = (
+        mcp_server.AccessToken(token="unused", client_id="test", subject=subject, scopes=[])
+        if subject is not None else None
+    )
+    auth = _auth("admin")
+    monkeypatch.setattr(mcp_server, "get_access_token", lambda: token)
+    monkeypatch.setattr(mcp_server, "get_auth", lambda: auth)
+
+    with pytest.raises(mcp_server.ToolError, match="Authentication is required"):
+        mcp_server._current_author()
+
+
 def test_storage_failure_fails_closed_without_exposing_key(
     mcp_client: tuple[TestClient, str], monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

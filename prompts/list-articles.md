@@ -9,6 +9,10 @@ current implementation and preserve existing functionality and uncommitted chang
 All generated application files must remain inside `blog/`. Do not deploy, commit,
 or push unless separately requested. Do not add dependencies for this change.
 
+Keep the live-demo workflow short: do not create or run automated tests, regression
+suites, or smoke tests unless separately requested. Do not make cloud storage
+requests or create production content.
+
 ## Goal
 
 Extend the existing authenticated FastMCP server with a second tool named
@@ -65,23 +69,8 @@ use both `add_story` and `list_articles`. Update wording that says the MCP serve
 has exactly one tool. Keep the distinction between managed MCP keys and legacy REST
 API keys clear.
 
-## Verification
-
-- Update MCP HTTP discovery and `tools/list` tests to require exactly
-  `add_story` and `list_articles`, including the read-only annotations.
-- Call `list_articles` through the actual `/mcp` Streamable HTTP endpoint and verify
-  its structured response, newest-first order, public paths, missing optional-field
-  defaults, and empty repository behavior.
-- Verify that story bodies, image/storage fields, credentials, hashes, and API-key
-  metadata do not appear in the tool schema or result.
-- Test a repository read failure and confirm the returned error is sanitized.
-- Preserve tests for authentication, revocation, owner isolation, protocol versions,
-  endpoint routing, repeated lifecycles, `add_story`, public routes, and `/health`.
-- Run the complete test suite and diagnostics for changed files. Do not make cloud
-  storage requests, create production content, or deploy.
-
 ## Completion report
 
-Summarize the changed files, the final schemas for both MCP tools, and test results.
+Summarize the changed files and the final schemas for both MCP tools.
 Clearly identify anything not verified. Do not deploy, commit, or push without a
 separate request.

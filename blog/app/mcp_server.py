@@ -1,11 +1,11 @@
-"""Authenticated FastMCP publishing endpoint for the Hamba live demo.
+"""Authenticated FastMCP article endpoint for the Hamba live demo.
 
-The server deliberately exposes one immediately-publishing tool. Managed keys
+The server exposes story publishing and public article summaries. Managed keys
 come from the admin UI; legacy AUTHOR_CONFIG API keys remain REST-only.
 
-Request flow: check the host and Bearer key, validate the tool arguments,
-resolve the author, and create the story without overwriting an existing one.
-Client approval happens outside this server; an accepted call publishes immediately.
+Requests check the host and Bearer key before listing summaries or publishing.
+Publishing never overwrites an existing story and requires client-side approval;
+an accepted add_story call publishes immediately.
 """
 
 from __future__ import annotations
@@ -65,20 +65,20 @@ class ManagedApiKeyVerifier(TokenVerifier):
             token=token,
             client_id=f"hamba-managed-key:{author.username}",
             subject=author.username,
-            scopes=["add_story"],
+            scopes=["add_story", "list_articles"],
         )
 
 
 def _current_author() -> Author:
-    """Resolve story attribution; admin authorization belongs to the verifier."""
+    """Resolve the request identity; admin authorization belongs to the verifier."""
     # Read identity from the authenticated request, never from tool arguments.
     token = get_access_token()
     if token is None or not token.subject:
-        raise ToolError("Authentication is required to publish a story.")
+        raise ToolError("Authentication is required to use MCP tools.")
 
     author = get_auth().get_author(token.subject)
     if author is None:
-        raise ToolError("Authentication is required to publish a story.")
+        raise ToolError("Authentication is required to use MCP tools.")
     return author
 
 
@@ -157,13 +157,31 @@ class AddStoryResult(BaseModel):
     path: str
 
 
+class ArticleSummary(BaseModel):
+    """Public summary only; never serialize a complete repository record."""
+
+    slug: str
+    title: str
+    lead: str
+    published_at: str
+    author: str = ""
+    path: str
+    source_url: str = ""
+
+
+class ListArticlesResult(BaseModel):
+    """All published article summaries in repository order, newest first."""
+
+    articles: list[ArticleSummary]
+
+
 # Authentication applies to the MCP server, including tool discovery and calls.
 # Unexpected errors are masked; deliberate ToolError messages remain client-visible.
 mcp = FastMCP(
     name="Hamba Publishing",
     instructions=(
-        "Publish new Hamba travel stories. "
-        "Every tool call writes immediately and requires approval."
+        "List public Hamba article summaries before publishing new travel stories. "
+        "list_articles is read-only; add_story writes immediately and requires approval."
     ),
     auth=ManagedApiKeyVerifier(),
     mask_error_details=True,
@@ -219,6 +237,41 @@ async def add_story(
         title=saved["title"],
         path=f"/posts/{saved['slug']}",
     )
+
+
+@mcp.tool(
+    description=(
+        "List public article summaries for all published Hamba articles, newest first. "
+        "Reads only Hamba's own storage; does not return full stories or image details."
+    ),
+    annotations=ToolAnnotations(
+        title="List Hamba articles",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+async def list_articles() -> ListArticlesResult:
+    """Read published summaries without exposing internal repository fields."""
+    _current_author()
+    try:
+        published = await run_in_threadpool(posts.list_posts)
+        return ListArticlesResult(articles=[
+            ArticleSummary(
+                slug=post["slug"],
+                title=post["title"],
+                lead=post["lead"],
+                published_at=post["published_at"],
+                author=post.get("author") or "",
+                path=f"/posts/{post['slug']}",
+                source_url=post.get("source_url") or "",
+            )
+            for post in published
+        ])
+    except Exception as exc:
+        logger.exception("Article listing failed")
+        raise ToolError("Articles could not be listed. Please try again.") from exc
 
 
 # The main FastAPI app serves this authenticated ASGI app at /mcp.

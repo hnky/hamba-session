@@ -9,6 +9,9 @@ preserve existing functionality and uncommitted changes.
 All generated application files must remain inside `blog/`. Do not deploy,
 commit, or push unless separately requested.
 
+Keep the live-demo workflow short: do not create or run automated tests, regression
+suites, or smoke tests unless separately requested.
+
 ## Goal
 
 Add a FastMCP server to the existing Hamba blog with exactly one tool:
@@ -16,7 +19,7 @@ Add a FastMCP server to the existing Hamba blog with exactly one tool:
 
 This is for a live demo. Keep all MCP-specific implementation in one clearly
 ordered module, `blog/app/mcp_server.py`. Small supporting changes to application
-wiring, storage, dependencies, documentation, and tests are allowed. Do not build
+wiring, storage, dependencies, and documentation are allowed. Do not build
 a separate service or generate tools automatically from existing REST routes.
 
 ## Framework and transport
@@ -32,13 +35,13 @@ a separate service or generate tools automatically from existing REST routes.
 	unrelated dependencies.
 - Check dependency compatibility first. FastMCP 4 requires Pydantic >=2.12 and
 	Starlette >=1.0.1; FastAPI >=0.133.0 admits those Starlette versions. Verify the
-	actual resolved environment and regression-test any required upgrades.
+	actual resolved environment before changing dependencies.
 - Preserve the repository's existing `httpx` usage. FastMCP's HTTP stack uses
-	`httpx2`; use the appropriate client and exception types in integration tests.
+	`httpx2`; use the appropriate client and exception types.
 - Expose Streamable HTTP at `/mcp` within the existing FastAPI application.
 - Combine the exported FastMCP HTTP application's lifespan with the existing
 	startup/shutdown logic. Mounted sub-app lifespans do not run automatically.
-- Avoid doubled endpoint paths and test trailing-slash behavior. If using a root
+- Avoid doubled endpoint paths and preserve trailing-slash behavior. If using a root
 	mount with an internal `/mcp` route, put that mount after existing routes.
 - Use stateless HTTP mode for replica compatibility. Do not depend on session
 	state or an initialization handshake for authentication.
@@ -81,8 +84,8 @@ and async handlers; run synchronous storage work off the event loop.
 	must not provide alternative MCP authentication.
 - Return an appropriate unauthorized response with a Bearer challenge for invalid
 	credentials. Fail closed with sanitized errors if key storage is unavailable.
-- Never log, return, or commit raw keys. Use generated, transient credentials in
-	tests; do not read or print existing secret configuration.
+- Never log, return, or commit raw keys. Do not read or print existing secret
+	configuration.
 - Keep legacy REST API authentication unchanged.
 - This is demo API-key authentication, not a full OAuth flow. Do not invent an
 	OAuth issuer, discovery metadata, authorization server, or new key-issuance API.
@@ -142,28 +145,14 @@ Expose no editing, deletion, listing, image-upload, or key-management MCP tools.
 	re-encoding it. Validate that one decoding step still yields the original JSON
 	object expected by the application.
 
-## Verification
+## Deployment safety
 
-- Test actual HTTP discovery, `tools/list` (exactly one tool), and `tools/call`.
-	In-memory MCP clients alone do not exercise HTTP authentication.
-- Verify both the newest supported protocol and a legacy initialization client.
-	Do not claim compatibility with a specific hosted client without testing it.
-- Test missing, malformed, invalid, tampered, and revoked Bearer tokens, including
-	revocation between successful requests. Test rejected alternative credentials.
-- Test owner attribution, removed owners, request isolation, and storage failures.
-- Test validation, optional images, successful public rendering, and duplicate
-	protection including concurrent creation. Mock cloud point reads and create-only
-	writes without making production requests.
-- Check that keys/hashes do not appear in tool schemas, results, errors, or logs.
-- Test Host/Origin protections, exact endpoint routing, and startup/shutdown across
-	repeated application lifecycles.
-- Run the complete existing test suite, diagnostics on changed files, and a local
-	container smoke test covering `/health` and authenticated story creation.
 - Run `azd provision --preview --no-prompt` against a non-production or existing
 	safe demo environment whenever Bicep or deployment environment variables change.
 	The preview must resolve parameters successfully with `AUTHOR_CONFIG` populated;
 	do not run `azd up` unless deployment is separately requested.
-- Keep production unchanged: no production test stories, keys, or deployments.
+- Keep production unchanged: do not create production stories, keys, or deployments
+	unless separately requested.
 
 ## Demo documentation
 
@@ -178,7 +167,7 @@ Document this sequence with no embedded credentials:
 
 ## Completion report
 
-Summarize the changed files, confirmed FastMCP/protocol versions, test results,
+Summarize the changed files, confirmed FastMCP/protocol versions,
 and local connection instructions. Clearly identify anything not verified.
 Do not deploy, commit, or push without a separate request.
 

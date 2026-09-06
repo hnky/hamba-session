@@ -1,9 +1,9 @@
 {% extends "author/layout.html" %}
 {% block title %}API keys — Hamba{% endblock %}
 {% block heading %}Keys for what comes next.{% endblock %}
-{% block lead %}Create and manage named keys for MCP story publishing. Keep each key private and revoke it when it is no longer needed.{% endblock %}
+{% block lead %}Create and manage named keys for MCP article listing and story publishing. Keep each key private and revoke it when it is no longer needed.{% endblock %}
 {% block studio %}
-<p class="mb-8 rounded-2xl bg-sand p-5 text-sm text-forest">Use these keys as Bearer credentials for the MCP endpoint at <code>/mcp</code>. They authorize the <code>add_story</code> tool only and do not replace legacy REST API keys.</p>
+<p class="mb-8 rounded-2xl bg-sand p-5 text-sm text-forest">Use these keys as Bearer credentials for the MCP endpoint at <code>/mcp</code>. They authorize both <code>add_story</code> (publishing) and <code>list_articles</code> (read-only public summaries) and do not replace legacy REST API keys.</p>
 <form method="post" action="/author/api-keys" class="rounded-3xl border border-forest/10 bg-white p-6 shadow-sm sm:p-8">
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <h2 class="font-display text-2xl">Create an API key</h2>

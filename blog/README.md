@@ -9,7 +9,7 @@
 - Azure Blob Storage contains one destination image per post; the application streams private blobs through its managed identity.
 - Azure Container Registry stores the Docker image.
 - Azure Container Apps runs the image with readiness and liveness probes on `GET /health`.
-- FastMCP exposes one authenticated, stateless publishing tool at `/mcp`.
+- FastMCP exposes two authenticated, stateless tools at `/mcp`: `add_story` and `list_articles`.
 - A user-assigned managed identity receives only Blob Data Contributor, Table Data Contributor, and ACR Pull roles. No storage keys or Azure credentials are stored by the application.
 
 On cloud startup, the application seeds missing stories from ten original English summaries based on attributed Hamba.nl magazine stories and downloads one associated image per new story into the private Blob container. Existing stories and author edits are never overwritten by startup seeding. If an image download or Blob read fails, a bundled SVG placeholder is shown.
@@ -21,17 +21,11 @@ Prerequisites: Python 3.12+ and Docker (optional).
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
 Open http://localhost:8000. Without Azure Storage environment variables, bundled sample content and local image fallbacks are used.
-
-Run tests:
-
-```bash
-pytest
-```
 
 Build and run the container:
 
@@ -133,25 +127,28 @@ existing posts table, accessed via managed identity; no extra infrastructure or
 configuration is needed. Locally they are in memory and reset on restart.
 Revocation is permanent; create a new key to replace a revoked or lost key.
 
-Managed keys authenticate the MCP endpoint only. Existing legacy REST endpoints
+Managed keys authenticate the MCP endpoint for both `add_story` and `list_articles`.
+Existing legacy REST endpoints
 and their `AUTHOR_CONFIG` `X-API-Key` authentication are unchanged; legacy keys
 are not listed or revoked by this page. MCP authentication checks the stored
 hash and revocation state on every request. Keep full keys out of source control,
 logs, URLs, and chat.
 
-### MCP story publishing demo
+### MCP article discovery and publishing demo
 
 The Streamable HTTP endpoint is `<SERVICE_WEB_URI>/mcp`. It uses FastMCP 4.0.3,
 supports the current MCP protocol (`2026-07-28`) and earlier initialization-based
-clients, and runs statelessly for Container Apps replicas. It exposes exactly one
-tool, `add_story`, which publishes immediately and requires client-side approval.
+clients, and runs statelessly for Container Apps replicas. It exposes exactly two
+tools: read-only `list_articles` and `add_story`, which publishes immediately and
+requires client-side approval. Both require a managed key owned by a current admin.
 
 1. Sign in as `admin`, open **Author studio → API keys**, and create a named key.
 2. Put the one-time key value into the MCP client's secure secret input. Do not put
 	it directly in a committed client configuration file.
 3. Configure a Streamable HTTP connection to `<SERVICE_WEB_URI>/mcp` with
 	`Authorization: Bearer <secure-key-reference>`.
-4. Discover `add_story`, review its arguments, and approve the publishing call.
+4. Discover both tools and call `list_articles` to check existing content. Then
+	review `add_story` arguments and approve the publishing call.
 5. Open the returned `path` under `<SERVICE_WEB_URI>` to view the public story.
 6. Revoke the key in **Author studio → API keys** and retry discovery or a tool
 	call; the next request is rejected with `401 Unauthorized`.
@@ -162,6 +159,15 @@ datetime such as `2025-01-01T00:00:00Z`; datetime values are stored as their
 calendar date. `source_url` and `image_url` are optional. Omitting an image uses
 the existing placeholder. The tool derives authorship from the verified key
 owner and never accepts identity or credentials as arguments.
+
+`list_articles` takes no arguments and returns an object with an `articles` array,
+containing every published article in the repository's newest-first order. Each
+summary contains only `slug`, `title`, `lead`, `published_at`, `author`, `path`
+(`/posts/<slug>`), and `source_url`. Missing authors and source URLs are empty
+strings; an empty repository returns `{"articles": []}`. No story paragraphs,
+image/storage fields, or key metadata are returned. The tool is read-only,
+non-destructive, and idempotent, and accesses only Hamba's own storage. Storage
+failures return a sanitized error rather than fallback content.
 
 Azure deployment settings are injected by Bicep. For optional local Azure Storage access, copy `.env.example` to `.env`, authenticate with `az login`, and export the values into your shell. The example file contains no secrets.
 

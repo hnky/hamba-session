@@ -2,6 +2,9 @@
 
 Build a small, polished travel blog called **Hamba**, with the tagline **Travel and stay well**, that can be generated and deployed quickly for a live presentation. Give it an inspiring, image-led design with a warm color palette, large destination photography, and clear typography.
 
+Keep the live-demo workflow short: do not create or run automated tests, regression
+suites, or smoke tests unless separately requested.
+
 ## Project location
 
 - Create the complete project inside a new `blog/` folder at the repository root

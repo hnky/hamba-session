@@ -156,10 +156,12 @@ tool, `add_story`, which publishes immediately and requires client-side approval
 6. Revoke the key in **Author studio → API keys** and retry discovery or a tool
 	call; the next request is rejected with `401 Unauthorized`.
 
-`add_story` requires `slug`, `title`, `lead`, `published_at` (`YYYY-MM-DD`), and a
-nonempty `story` paragraph list. `source_url` and `image_url` are optional. Omitting
-an image uses the existing placeholder. The tool derives authorship from the
-verified key owner and never accepts identity or credentials as arguments.
+`add_story` requires `slug`, `title`, `lead`, `published_at`, and a nonempty
+`story` paragraph list. `published_at` accepts `YYYY-MM-DD` or an ISO 8601
+datetime such as `2025-01-01T00:00:00Z`; datetime values are stored as their
+calendar date. `source_url` and `image_url` are optional. Omitting an image uses
+the existing placeholder. The tool derives authorship from the verified key
+owner and never accepts identity or credentials as arguments.
 
 Azure deployment settings are injected by Bicep. For optional local Azure Storage access, copy `.env.example` to `.env`, authenticate with `az login`, and export the values into your shell. The example file contains no secrets.
 

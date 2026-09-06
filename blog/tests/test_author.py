@@ -166,6 +166,14 @@ def test_invalid_forms_preserve_input_and_reject_csrf(author_client: AuthorClien
     assert client.get("/author/posts/missing/edit").status_code == 404
 
 
+def test_api_normalizes_iso_publication_datetime(author_client: AuthorClient) -> None:
+    client, _, api_key = author_client
+    data = {**new_post(""), "published_at": "2025-01-01T00:00:00Z"}
+    response = client.post("/api/author/posts", headers={"X-API-Key": api_key}, json=data)
+    assert response.status_code == 201
+    assert response.json()["published_at"] == "2025-01-01"
+
+
 def test_image_download_error_is_displayed(author_client: AuthorClient, monkeypatch: pytest.MonkeyPatch) -> None:
     client, password, _ = author_client
     csrf = sign_in(client, password)

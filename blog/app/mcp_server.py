@@ -51,12 +51,39 @@ class ManagedApiKeyVerifier(TokenVerifier):
         )
 
 
-Slug = Annotated[str, Field(min_length=1, max_length=100)]
-Title = Annotated[str, Field(min_length=1, max_length=160)]
-Lead = Annotated[str, Field(min_length=1, max_length=400)]
+Slug = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=100,
+        pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$",
+        description="Public identifier containing lowercase words separated by hyphens.",
+        examples=["uganda-where-the-earth-breathes-green"],
+    ),
+]
+Title = Annotated[str, Field(min_length=1, max_length=160, description="Story title, up to 160 characters.")]
+Lead = Annotated[str, Field(min_length=1, max_length=400, description="Story introduction, up to 400 characters.")]
 Paragraph = Annotated[str, Field(min_length=1, max_length=4000)]
-Story = Annotated[list[Paragraph], Field(min_length=1, max_length=100)]
-OptionalUrl = Annotated[str | None, Field(max_length=2048)]
+Story = Annotated[
+    list[Paragraph],
+    Field(min_length=1, max_length=100, description="Between 1 and 100 nonempty paragraphs; each may contain up to 4,000 characters."),
+]
+OptionalUrl = Annotated[
+    str | None,
+    Field(max_length=2048, description="Optional absolute HTTP or HTTPS URL, up to 2,048 characters."),
+]
+PublicationDate = Annotated[
+    str,
+    Field(
+        min_length=10,
+        max_length=64,
+        description=(
+            "Publication date as YYYY-MM-DD or an ISO 8601 datetime. "
+            "Datetime values are normalized to their calendar date."
+        ),
+        examples=["2025-01-01", "2025-01-01T00:00:00Z"],
+    ),
+]
 
 
 class AddStoryResult(BaseModel):
@@ -88,7 +115,7 @@ async def add_story(
     slug: Slug,
     title: Title,
     lead: Lead,
-    published_at: Annotated[str, Field(min_length=10, max_length=10)],
+    published_at: PublicationDate,
     story: Story,
     source_url: OptionalUrl = None,
     image_url: OptionalUrl = None,

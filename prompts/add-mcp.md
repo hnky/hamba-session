@@ -94,7 +94,10 @@ Accept these required inputs:
 - `slug`: the public story identifier.
 - `title`: the story title.
 - `lead`: the introduction.
-- `published_at`: an ISO publication date.
+- `published_at`: a publication date. Accept `YYYY-MM-DD` and common ISO 8601
+	datetimes such as `2025-01-01T00:00:00Z`, normalizing datetimes to their
+	calendar date before storage. Describe both accepted forms in the tool schema
+	with examples so MCP clients do not have to infer the format.
 - `story`: a nonempty list of paragraph strings.
 
 Accept optional `source_url` and `image_url`. Do not add binary uploads or base64

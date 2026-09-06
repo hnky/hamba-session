@@ -181,6 +181,22 @@ def test_add_story_publishes_with_verified_owner(mcp_client: tuple[TestClient, s
     assert "sha256$" not in serialized
 
 
+def test_add_story_normalizes_iso_datetime(mcp_client: tuple[TestClient, str]) -> None:
+    client, raw_key = mcp_client
+    response = _modern_request(
+        client,
+        raw_key,
+        "tools/call",
+        {
+            "name": "add_story",
+            "arguments": {**_story(), "published_at": "2025-01-01T00:00:00Z"},
+        },
+    )
+    assert response.status_code == 200
+    assert not response.json()["result"]["isError"]
+    assert repository.get_post("mcp-story")["published_at"] == "2025-01-01"
+
+
 def test_add_story_image_and_duplicate_errors_are_safe(
     mcp_client: tuple[TestClient, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -217,6 +233,15 @@ def test_validation_rejects_invalid_story(mcp_client: tuple[TestClient, str]) ->
         assert response.status_code == 200
         assert response.json()["result"]["isError"]
     assert repository.get_post("mcp-story") is None
+
+
+def test_tool_schema_describes_publication_date_formats(mcp_client: tuple[TestClient, str]) -> None:
+    client, raw_key = mcp_client
+    response = _modern_request(client, raw_key, "tools/list")
+    published_at = response.json()["result"]["tools"][0]["inputSchema"]["properties"]["published_at"]
+    assert published_at["maxLength"] == 64
+    assert published_at["examples"] == ["2025-01-01", "2025-01-01T00:00:00Z"]
+    assert "ISO 8601 datetime" in published_at["description"]
 
 
 @pytest.mark.parametrize(

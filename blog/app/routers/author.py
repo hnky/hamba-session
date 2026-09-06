@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 import hmac
 import json
 import re
@@ -99,11 +99,25 @@ def _check_csrf(form: dict[str, str], expected: str) -> None:
         raise HTTPException(status_code=403, detail="Invalid form token")
 
 
+def normalize_publication_date(value: object) -> str:
+    published_at = str(value).strip()
+    try:
+        return date.fromisoformat(published_at).isoformat()
+    except ValueError:
+        try:
+            normalized = published_at[:-1] + "+00:00" if published_at.endswith(("Z", "z")) else published_at
+            return datetime.fromisoformat(normalized).date().isoformat()
+        except ValueError as exc:
+            raise ValueError(
+                "Publication date must be YYYY-MM-DD or an ISO 8601 datetime, such as 2025-01-01T00:00:00Z"
+            ) from exc
+
+
 def post_values(data: dict[str, object], author: Author, existing: dict | None = None) -> tuple[dict, str | None]:
     slug = str(existing["slug"] if existing else data.get("slug", "")).strip().lower()
     title = str(data.get("title", "")).strip()
     lead = str(data.get("lead", "")).strip()
-    published_at = str(data.get("published_at", "")).strip()
+    published_at = normalize_publication_date(data.get("published_at", ""))
     source_url = str(data.get("source_url", "")).strip()
     image_url = str(data.get("image_url", "")).strip() or None
     if source_url:
@@ -126,10 +140,6 @@ def post_values(data: dict[str, object], author: Author, existing: dict | None =
         raise ValueError("Story requires 1–100 paragraphs; each may be at most 4,000 characters")
     if len(source_url) > 2048 or (image_url is not None and len(image_url) > 2048):
         raise ValueError("URLs must be at most 2,048 characters")
-    try:
-        date.fromisoformat(published_at)
-    except ValueError as exc:
-        raise ValueError("Publication date must use YYYY-MM-DD") from exc
     return (
         {
             "slug": slug,

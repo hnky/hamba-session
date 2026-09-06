@@ -131,6 +131,13 @@ Expose no editing, deletion, listing, image-upload, or key-management MCP tools.
 - Reuse existing infrastructure, identity, and storage. No new resources or
 	credentials are needed. If introducing environment configuration, follow the
 	repository rule to update Bicep, `azure.yaml`, and `.env.example` together.
+- Preserve provisioning with an existing JSON-valued `AUTHOR_CONFIG`. When a
+	JSON parameters file places an azd substitution inside a quoted string (for
+	example, `"value": "${AUTHOR_CONFIG=}"`), the azd environment value must be
+	JSON-string escaped before substitution; raw object JSON makes the generated
+	parameters invalid. Do not print, regenerate, or alter the decoded secret while
+	re-encoding it. Validate that one decoding step still yields the original JSON
+	object expected by the application.
 
 ## Verification
 
@@ -149,6 +156,10 @@ Expose no editing, deletion, listing, image-upload, or key-management MCP tools.
 	repeated application lifecycles.
 - Run the complete existing test suite, diagnostics on changed files, and a local
 	container smoke test covering `/health` and authenticated story creation.
+- Run `azd provision --preview --no-prompt` against a non-production or existing
+	safe demo environment whenever Bicep or deployment environment variables change.
+	The preview must resolve parameters successfully with `AUTHOR_CONFIG` populated;
+	do not run `azd up` unless deployment is separately requested.
 - Keep production unchanged: no production test stories, keys, or deployments.
 
 ## Demo documentation

@@ -7,7 +7,10 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastmcp.utilities.lifespan import combine_lifespans
+from starlette.routing import Route
 
+from .mcp_server import mcp_http_app
 from .routers.author import api_router, author_navigation_context, router as author_router
 from .routers.api_keys import router as api_keys_router
 from .storage.posts import posts as repository
@@ -26,7 +29,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Hamba", lifespan=lifespan)
+app = FastAPI(title="Hamba", lifespan=combine_lifespans(lifespan, mcp_http_app.lifespan))
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(
     directory=BASE_DIR / "templates", context_processors=[author_navigation_context]
@@ -77,3 +80,8 @@ async def image(blob_name: str):
         return FileResponse(BASE_DIR / "static" / "placeholder.svg", media_type="image/svg+xml")
     content, content_type = result
     return Response(content=content, media_type=content_type, headers={"Cache-Control": "public, max-age=86400"})
+
+
+# Delegate the exact endpoint to the complete sub-application so its auth and
+# Host/Origin middleware run without a root catch-all changing existing routes.
+app.router.routes.append(Route("/mcp", endpoint=mcp_http_app, methods=["POST", "DELETE"]))

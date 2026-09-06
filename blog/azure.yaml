@@ -6,6 +6,7 @@ infra:
   path: infra
 # Optional AUTHOR_CONFIG is passed as a secure Bicep parameter and injected
 # through a Container Apps secret; never put its value in this file.
+# MCP_ALLOWED_HOSTS is derived from the provisioned Container App hostname.
 services:
   web:
     project: .

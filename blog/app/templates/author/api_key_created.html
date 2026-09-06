@@ -9,7 +9,7 @@
   <label for="new-api-key" class="mt-6 block text-sm font-semibold">Your API key</label>
   <textarea id="new-api-key" readonly rows="3" autocomplete="off" spellcheck="false" class="mt-2 w-full rounded-xl border border-forest/25 bg-sand/40 p-4 font-mono text-sm focus:ring-2 focus:ring-coral">{{ raw_key }}</textarea>
   <p class="mt-4 text-sm leading-6 text-ink/70">Only a hash is stored. You cannot retrieve this key later. If you lose it, revoke it and create a replacement. Do not share it in chat or commit it to source control.</p>
-  <p class="mt-4 text-sm text-ink/70">API integration is not enabled yet. Do not refresh this confirmation page: submitting the form again creates another key.</p>
+  <p class="mt-4 text-sm text-ink/70">Use this value as a Bearer credential for the MCP endpoint at <code>/mcp</code>. Do not refresh this confirmation page: submitting the form again creates another key.</p>
   <a href="/author/api-keys" class="mt-6 inline-block rounded-full bg-forest px-6 py-3 font-semibold text-white hover:bg-ink">Done — back to keys</a>
 </section>
 {% endblock %}

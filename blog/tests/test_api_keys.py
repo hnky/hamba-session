@@ -70,7 +70,7 @@ def test_admin_can_create_list_and_revoke(admin_client: TestClient) -> None:
     assert repository.list_api_keys("admin")[0]["revoked_at"]
     assert "Revoked" in client.get("/author/api-keys").text
     assert client.post(f"/author/api-keys/{stored['RowKey']}/revoke", data={"csrf_token": csrf}, follow_redirects=False).status_code == 303
-    # These keys are deliberately not wired to any API authentication yet.
+    # Managed MCP keys remain separate from legacy REST authentication.
     assert client.get("/api/author/posts", headers={"X-API-Key": raw_key}).status_code == 401
 
 
@@ -85,6 +85,15 @@ def test_new_keys_are_unique_and_separate_from_posts(admin_client: TestClient) -
     assert repository.list_api_keys("editor") == []
     assert not repository.revoke_api_key("editor", first["id"])
     assert not repository.list_api_keys("admin")[0]["revoked_at"]
+
+
+def test_managed_key_verification_checks_format_hash_and_revocation(admin_client: TestClient) -> None:
+    metadata, raw_key = repository.create_api_key("admin", "MCP publishing")
+    assert repository.verify_api_key(raw_key) == "admin"
+    assert repository.verify_api_key(raw_key[:-1] + ("A" if raw_key[-1] != "A" else "B")) is None
+    assert repository.verify_api_key("not-a-managed-key") is None
+    assert repository.revoke_api_key("admin", metadata["id"])
+    assert repository.verify_api_key(raw_key) is None
 
 
 def test_anonymous_and_forged_sessions_cannot_manage_keys(admin_client: TestClient) -> None:
@@ -201,10 +210,12 @@ def test_cloud_keys_survive_repository_recreation(monkeypatch: pytest.MonkeyPatc
     second.is_cloud_backed = True
     second._table = table
     assert second.list_api_keys("admin")[0]["id"] == metadata["id"]
+    assert second.verify_api_key(raw_key) == "admin"
     assert second.list_api_keys("editor") == []
     assert not second.revoke_api_key("editor", metadata["id"])
     assert not second.revoke_api_key("admin", "missing")
     assert second.revoke_api_key("admin", metadata["id"])
     assert first.list_api_keys("admin")[0]["revoked_at"]
+    assert second.verify_api_key(raw_key) is None
     assert second.revoke_api_key("admin", metadata["id"])
     assert table.update_entity.call_count == 1

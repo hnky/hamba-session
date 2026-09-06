@@ -1,12 +1,15 @@
 import json
 import hashlib
+import hmac
 from datetime import datetime, timezone
 import ipaddress
 import logging
 import os
 from pathlib import Path
+import re
 import socket
 import secrets
+from threading import Lock
 from urllib.parse import urljoin, urlparse
 from uuid import uuid4
 
@@ -20,6 +23,11 @@ from .content import SAMPLE_POSTS
 from .storage.images import normalize_upload
 
 logger = logging.getLogger(__name__)
+MANAGED_API_KEY_PATTERN = re.compile(r"^hamba_([0-9a-f]{32})_[A-Za-z0-9_-]{43}$")
+
+
+class DuplicatePostError(ValueError):
+    pass
 
 
 class BlogRepository:
@@ -34,6 +42,7 @@ class BlogRepository:
         self._local_posts = {post["slug"]: dict(post) for post in SAMPLE_POSTS}
         self._local_images: dict[str, tuple[bytes, str]] = {}
         self._local_api_keys: dict[str, dict] = {}
+        self._local_post_lock = Lock()
 
         if self.is_cloud_backed:
             credential = DefaultAzureCredential()
@@ -151,6 +160,26 @@ class BlogRepository:
             self._local_api_keys[key_id] = entity
         # This is the only time the complete key is returned; it is not stored.
         return self._api_key_metadata(entity), raw_key
+
+    def verify_api_key(self, raw_key: str) -> str | None:
+        match = MANAGED_API_KEY_PATTERN.fullmatch(raw_key)
+        if match is None:
+            return None
+        key_id = match.group(1)
+        try:
+            entity = (
+                self._table.get_entity("api-keys", key_id)
+                if self.is_cloud_backed else self._local_api_keys.get(key_id)
+            )
+        except ResourceNotFoundError:
+            return None
+        if entity is None or entity.get("revoked_at"):
+            return None
+        candidate = "sha256$" + hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+        stored_hash = str(entity.get("key_hash", ""))
+        if not hmac.compare_digest(candidate, stored_hash):
+            return None
+        return str(entity.get("created_by", "")) or None
 
     def list_api_keys(self, username: str) -> list[dict[str, str]]:
         if self.is_cloud_backed:
@@ -300,3 +329,68 @@ class BlogRepository:
             }
         )
         return saved
+
+    def create_post(
+        self,
+        post: dict,
+        image_url: str | None = None,
+        image_upload: bytes | None = None,
+    ) -> dict:
+        if not self.is_cloud_backed:
+            with self._local_post_lock:
+                if post["slug"] in self._local_posts:
+                    raise DuplicatePostError("A post with this slug already exists")
+                return self.save_post(post, image_url, image_upload)
+
+        saved = self._prepare_post(post, image_url, image_upload, create_only=True)
+        try:
+            self._table.create_entity(self._post_entity(saved))
+        except ResourceExistsError as exc:
+            raise DuplicatePostError("A post with this slug already exists") from exc
+        return saved
+
+    def _prepare_post(
+        self,
+        post: dict,
+        image_url: str | None = None,
+        image_upload: bytes | None = None,
+        create_only: bool = False,
+    ) -> dict:
+        image_blob = str(post.get("image_blob") or f"{post['slug']}.jpg")
+        if image_upload is not None or image_url:
+            image, content_type = normalize_upload(image_upload) if image_upload is not None else self._download_image(image_url)
+            if image_upload is not None or create_only:
+                image_blob = f"{post['slug']}-{uuid4().hex}.jpg"
+            if self.is_cloud_backed:
+                self._container.get_blob_client(image_blob).upload_blob(
+                    image,
+                    overwrite=not create_only,
+                    content_settings=ContentSettings(content_type=content_type),
+                )
+            else:
+                self._local_images[image_blob] = (image, content_type)
+        return {
+            "slug": str(post["slug"]),
+            "title": str(post["title"]),
+            "lead": str(post["lead"]),
+            "published_at": str(post["published_at"]),
+            "image_blob": image_blob,
+            "story": list(post["story"]),
+            "source_url": str(post.get("source_url", "")),
+            "image_source": "" if image_upload is not None else str(image_url or post.get("image_source", "")),
+            "author": str(post["author"]),
+        }
+
+    @staticmethod
+    def _post_entity(saved: dict) -> dict:
+        return {
+            "PartitionKey": "published",
+            "RowKey": saved["slug"],
+            "title": saved["title"],
+            "lead": saved["lead"],
+            "published_at": saved["published_at"],
+            "image_blob": saved["image_blob"],
+            "story": json.dumps(saved["story"]),
+            "source_url": saved["source_url"],
+            "author": saved["author"],
+        }

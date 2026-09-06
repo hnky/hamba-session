@@ -2,13 +2,14 @@
 
 from copy import deepcopy
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 import json
 import re
 import secrets
 from unittest.mock import MagicMock
 
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core.exceptions import ResourceExistsError, ResourceNotFoundError
 from fastapi.testclient import TestClient
 import httpx
 import pytest
@@ -18,7 +19,7 @@ from app import auth as auth_module
 from app.auth import AuthorAuth, SESSION_COOKIE, get_auth
 from app.content import SAMPLE_POSTS
 from app.main import app, repository
-from app.repository import BlogRepository
+from app.repository import BlogRepository, DuplicatePostError
 from app.routers import author as routes
 from app.storage.images import MAX_IMAGE_BYTES, normalize_upload
 
@@ -380,3 +381,52 @@ def test_api_create_without_image(author_client: AuthorClient) -> None:
     response = client.post("/api/author/posts", headers={"X-API-Key": api_key}, json=data)
     assert response.status_code == 201
     assert client.get("/posts/quiet-coast").status_code == 200
+
+
+def test_create_post_is_atomic_locally() -> None:
+    store = BlogRepository()
+    post = {
+        "slug": "atomic-story", "title": "Original", "lead": "A lead",
+        "published_at": "2026-09-05", "story": ["Paragraph"], "author": "admin",
+    }
+    store.create_post(post)
+    with pytest.raises(DuplicatePostError, match="already exists"):
+        store.create_post({**post, "title": "Replacement"})
+    assert store.get_post("atomic-story")["title"] == "Original"
+
+    other = {**post, "title": "Concurrent replacement"}
+    concurrent = BlogRepository()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda item: _try_create(concurrent, item), (post, other)))
+    assert sorted(outcomes) == ["created", "duplicate"]
+    assert concurrent.get_post("atomic-story")["title"] in {"Original", "Concurrent replacement"}
+
+
+def test_cloud_create_uses_create_only_storage(monkeypatch: pytest.MonkeyPatch) -> None:
+    store = BlogRepository()
+    store.is_cloud_backed = True
+    store._table = MagicMock()
+    store._container = MagicMock()
+    monkeypatch.setattr(store, "_download_image", lambda _: (b"image", "image/jpeg"))
+    post = {
+        "slug": "cloud-story", "title": "Cloud story", "lead": "A lead",
+        "published_at": "2026-09-05", "story": ["Paragraph"], "author": "admin",
+    }
+    saved = store.create_post(post, "https://example.com/image.jpg")
+    assert saved["image_blob"].startswith("cloud-story-")
+    store._table.create_entity.assert_called_once()
+    store._table.upsert_entity.assert_not_called()
+    upload = store._container.get_blob_client.return_value.upload_blob.call_args
+    assert upload.kwargs["overwrite"] is False
+
+    store._table.create_entity.side_effect = ResourceExistsError("exists")
+    with pytest.raises(DuplicatePostError, match="already exists"):
+        store.create_post(post)
+
+
+def _try_create(store: BlogRepository, post: dict) -> str:
+    try:
+        store.create_post(post)
+    except DuplicatePostError:
+        return "duplicate"
+    return "created"

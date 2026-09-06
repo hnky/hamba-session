@@ -110,6 +110,9 @@ class AuthorAuth:
                 return author
         return None
 
+    def get_author(self, username: str) -> Author | None:
+        return self._authors.get(username)
+
     @staticmethod
     def _encode(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")

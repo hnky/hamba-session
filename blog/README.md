@@ -9,6 +9,7 @@
 - Azure Blob Storage contains one destination image per post; the application streams private blobs through its managed identity.
 - Azure Container Registry stores the Docker image.
 - Azure Container Apps runs the image with readiness and liveness probes on `GET /health`.
+- FastMCP exposes one authenticated, stateless publishing tool at `/mcp`.
 - A user-assigned managed identity receives only Blob Data Contributor, Table Data Contributor, and ACR Pull roles. No storage keys or Azure credentials are stored by the application.
 
 On cloud startup, the application seeds missing stories from ten original English summaries based on attributed Hamba.nl magazine stories and downloads one associated image per new story into the private Blob container. Existing stories and author edits are never overwritten by startup seeding. If an image download or Blob read fails, a bundled SVG placeholder is shown.
@@ -132,12 +133,33 @@ existing posts table, accessed via managed identity; no extra infrastructure or
 configuration is needed. Locally they are in memory and reset on restart.
 Revocation is permanent; create a new key to replace a revoked or lost key.
 
-**Scope:** this implements key management only. Newly managed keys are not
-connected to any API authentication yet and grant no API access. Existing
-legacy API endpoints and their `AUTHOR_CONFIG` authentication are unchanged;
-their keys are not listed or revoked by this page. Future API integration must
-check the stored hash and revocation state on every request. Keep full keys
-out of source control, logs, URLs, and chat.
+Managed keys authenticate the MCP endpoint only. Existing legacy REST endpoints
+and their `AUTHOR_CONFIG` `X-API-Key` authentication are unchanged; legacy keys
+are not listed or revoked by this page. MCP authentication checks the stored
+hash and revocation state on every request. Keep full keys out of source control,
+logs, URLs, and chat.
+
+### MCP story publishing demo
+
+The Streamable HTTP endpoint is `<SERVICE_WEB_URI>/mcp`. It uses FastMCP 4.0.3,
+supports the current MCP protocol (`2026-07-28`) and earlier initialization-based
+clients, and runs statelessly for Container Apps replicas. It exposes exactly one
+tool, `add_story`, which publishes immediately and requires client-side approval.
+
+1. Sign in as `admin`, open **Author studio → API keys**, and create a named key.
+2. Put the one-time key value into the MCP client's secure secret input. Do not put
+	it directly in a committed client configuration file.
+3. Configure a Streamable HTTP connection to `<SERVICE_WEB_URI>/mcp` with
+	`Authorization: Bearer <secure-key-reference>`.
+4. Discover `add_story`, review its arguments, and approve the publishing call.
+5. Open the returned `path` under `<SERVICE_WEB_URI>` to view the public story.
+6. Revoke the key in **Author studio → API keys** and retry discovery or a tool
+	call; the next request is rejected with `401 Unauthorized`.
+
+`add_story` requires `slug`, `title`, `lead`, `published_at` (`YYYY-MM-DD`), and a
+nonempty `story` paragraph list. `source_url` and `image_url` are optional. Omitting
+an image uses the existing placeholder. The tool derives authorship from the
+verified key owner and never accepts identity or credentials as arguments.
 
 Azure deployment settings are injected by Bicep. For optional local Azure Storage access, copy `.env.example` to `.env`, authenticate with `az login`, and export the values into your shell. The example file contains no secrets.
 
@@ -148,6 +170,7 @@ Azure deployment settings are injected by Bicep. For optional local Azure Storag
 | `AZURE_STORAGE_BLOB_CONTAINER` | Image container, defaults to `images` |
 | `AZURE_STORAGE_TABLE_NAME` | Posts table, defaults to `posts` |
 | `AUTHOR_CONFIG` | Optional sensitive author configuration; keep empty in example files |
+| `MCP_ALLOWED_HOSTS` | Comma-separated trusted MCP Host values; deployment sets the Container App hostname |
 
 ## Cleanup
 

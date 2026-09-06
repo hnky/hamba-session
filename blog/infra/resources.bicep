@@ -196,6 +196,10 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
               name: 'AZURE_STORAGE_TABLE_NAME'
               value: tableName
             }
+            {
+              name: 'MCP_ALLOWED_HOSTS'
+              value: 'ca-${environmentName}.${containerEnvironment.properties.defaultDomain}'
+            }
           ], empty(authorConfig) ? [] : [
             {
               name: 'AUTHOR_CONFIG'

@@ -99,7 +99,7 @@ def _check_csrf(form: dict[str, str], expected: str) -> None:
         raise HTTPException(status_code=403, detail="Invalid form token")
 
 
-def _post_values(data: dict[str, object], author: Author, existing: dict | None = None, has_upload: bool = False) -> tuple[dict, str | None]:
+def post_values(data: dict[str, object], author: Author, existing: dict | None = None) -> tuple[dict, str | None]:
     slug = str(existing["slug"] if existing else data.get("slug", "")).strip().lower()
     title = str(data.get("title", "")).strip()
     lead = str(data.get("lead", "")).strip()
@@ -116,14 +116,16 @@ def _post_values(data: dict[str, object], author: Author, existing: dict | None 
     else:
         story = [paragraph.strip() for paragraph in str(raw_story).split("\n\n") if paragraph.strip()]
 
-    if not SLUG_PATTERN.fullmatch(slug):
+    if len(slug) > 100 or not SLUG_PATTERN.fullmatch(slug):
         raise ValueError("Slug must contain lowercase words separated by hyphens")
     if not title or len(title) > 160:
         raise ValueError("Title is required and must be at most 160 characters")
     if not lead or len(lead) > 400:
         raise ValueError("Lead is required and must be at most 400 characters")
-    if not story or any(len(paragraph) > 4000 for paragraph in story):
-        raise ValueError("Story requires at least one paragraph; each may be at most 4,000 characters")
+    if not story or len(story) > 100 or any(len(paragraph) > 4000 for paragraph in story):
+        raise ValueError("Story requires 1–100 paragraphs; each may be at most 4,000 characters")
+    if len(source_url) > 2048 or (image_url is not None and len(image_url) > 2048):
+        raise ValueError("URLs must be at most 2,048 characters")
     try:
         date.fromisoformat(published_at)
     except ValueError as exc:
@@ -241,10 +243,8 @@ async def create_post(request: Request) -> Response:
     form, image_upload = await _read_post_form(request)
     _check_csrf(form, csrf)
     try:
-        post, image_url = _post_values(form, author, has_upload=image_upload is not None)
-        if await run_in_threadpool(posts.get_post, post["slug"]):
-            raise ValueError("A post with this slug already exists")
-        await run_in_threadpool(posts.save_post, post, image_url, image_upload)
+        post, image_url = post_values(form, author)
+        await run_in_threadpool(posts.create_post, post, image_url, image_upload)
     except (ValueError, HTTPException, httpx.HTTPError) as exc:
         message = "Could not download the destination image." if isinstance(exc, httpx.HTTPError) else (exc.detail if isinstance(exc, HTTPException) else str(exc))
         return _templates(request).TemplateResponse(
@@ -284,7 +284,7 @@ async def update_post(request: Request, slug: str) -> Response:
     if existing is None:
         raise HTTPException(status_code=404, detail="Post not found")
     try:
-        post, image_url = _post_values(form, author, existing, has_upload=image_upload is not None)
+        post, image_url = post_values(form, author, existing)
         await run_in_threadpool(posts.save_post, post, image_url, image_upload)
     except (ValueError, HTTPException, httpx.HTTPError) as exc:
         message = "Could not download the destination image." if isinstance(exc, httpx.HTTPError) else (exc.detail if isinstance(exc, HTTPException) else str(exc))
@@ -311,10 +311,8 @@ async def api_create_post(request: Request, x_api_key: str | None = Header(defau
         payload = await request.json()
         if not isinstance(payload, dict):
             raise ValueError("Expected a JSON object")
-        post, image_url = _post_values(payload, author)
-        if await run_in_threadpool(posts.get_post, post["slug"]):
-            raise ValueError("A post with this slug already exists")
-        saved = await run_in_threadpool(posts.save_post, post, image_url)
+        post, image_url = post_values(payload, author)
+        saved = await run_in_threadpool(posts.create_post, post, image_url)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=400, detail="Could not download the destination image") from exc
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
@@ -334,7 +332,7 @@ async def api_update_post(
         payload = await request.json()
         if not isinstance(payload, dict):
             raise ValueError("Expected a JSON object")
-        post, image_url = _post_values(payload, author, existing)
+        post, image_url = post_values(payload, author, existing)
         saved = await run_in_threadpool(posts.save_post, post, image_url)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=400, detail="Could not download the destination image") from exc

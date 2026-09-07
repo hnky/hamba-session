@@ -1,9 +1,10 @@
 """Authenticated FastMCP article endpoint for the Hamba live demo.
 
-The server exposes story publishing and public article summaries. Managed keys
-come from the admin UI; legacy AUTHOR_CONFIG API keys remain REST-only.
+The server exposes story publishing, public article summaries, and full article
+retrieval. Managed keys come from the admin UI; legacy AUTHOR_CONFIG API keys
+remain REST-only.
 
-Requests check the host and Bearer key before listing summaries or publishing.
+Requests check the host and Bearer key before reading articles or publishing.
 Publishing never overwrites an existing story and requires client-side approval;
 an accepted add_story call publishes immediately.
 """
@@ -65,7 +66,7 @@ class ManagedApiKeyVerifier(TokenVerifier):
             token=token,
             client_id=f"hamba-managed-key:{author.username}",
             subject=author.username,
-            scopes=["add_story", "list_articles"],
+            scopes=["add_story", "list_articles", "get_article"],
         )
 
 
@@ -175,13 +176,27 @@ class ListArticlesResult(BaseModel):
     articles: list[ArticleSummary]
 
 
+class GetArticleResult(BaseModel):
+    """One complete published article with only explicitly public fields."""
+
+    slug: str
+    title: str
+    lead: str
+    published_at: str
+    author: str = ""
+    path: str
+    source_url: str = ""
+    story: list[str]
+
+
 # Authentication applies to the MCP server, including tool discovery and calls.
 # Unexpected errors are masked; deliberate ToolError messages remain client-visible.
 mcp = FastMCP(
     name="Hamba Publishing",
     instructions=(
-        "List public Hamba article summaries before publishing new travel stories. "
-        "list_articles is read-only; add_story writes immediately and requires approval."
+        "Call list_articles, pass a returned slug to get_article, and read its story before "
+        "optionally approving add_story. list_articles and get_article are read-only; "
+        "add_story publishes immediately and requires client-side approval."
     ),
     auth=ManagedApiKeyVerifier(),
     mask_error_details=True,
@@ -272,6 +287,48 @@ async def list_articles() -> ListArticlesResult:
     except Exception as exc:
         logger.exception("Article listing failed")
         raise ToolError("Articles could not be listed. Please try again.") from exc
+
+
+@mcp.tool(
+    description=(
+        "Retrieve one full published Hamba article by a slug returned by list_articles. "
+        "Returns the complete stored story without fetching its source URL."
+    ),
+    annotations=ToolAnnotations(
+        title="Get a Hamba article",
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    ),
+)
+async def get_article(
+    slug: Annotated[
+        Slug,
+        Field(description="Slug returned by list_articles, not a URL or storage key."),
+    ],
+) -> GetArticleResult:
+    """Read one complete published article without exposing internal fields."""
+    _current_author()
+    try:
+        post = await run_in_threadpool(posts.get_post, slug)
+        if post is None:
+            raise ToolError("Article not found.")
+        return GetArticleResult(
+            slug=post["slug"],
+            title=post["title"],
+            lead=post["lead"],
+            published_at=post["published_at"],
+            author=post.get("author") or "",
+            path=f"/posts/{post['slug']}",
+            source_url=post.get("source_url") or "",
+            story=post["story"],
+        )
+    except ToolError:
+        raise
+    except Exception as exc:
+        logger.exception("Article retrieval failed")
+        raise ToolError("The article could not be retrieved. Please try again.") from exc
 
 
 # The main FastAPI app serves this authenticated ASGI app at /mcp.

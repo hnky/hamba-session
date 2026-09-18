@@ -95,7 +95,7 @@ Local stories/images are in-memory and reset when the process restarts.
 
 For production, use `python -m scripts.create_author_config` without `--local`.
 It requires a password of at least 12 characters and generates a random session
-secret, password hash, and API-key hash. Store the resulting `AUTHOR_CONFIG`
+secret and password hash. Store the resulting `AUTHOR_CONFIG`
 securely in the deployment environment; never commit it. The optional secure
 Bicep parameter maps it to a Container Apps secret, not a plain environment
 value. Empty/unset production configuration disables login—there is no default
@@ -107,9 +107,8 @@ so it is not reset to empty.
 
 Browser sessions use signed eight-hour cookies (`HttpOnly`, `SameSite=Lax`,
 `Secure` on HTTPS), and editing/logout forms require a session CSRF token.
-The `/api/author/posts` endpoints require each author's `X-API-Key`; browser
-cookies alone do not authorize API requests. Password changes currently happen
-through configuration, not through a web password-change page.
+Password changes currently happen through configuration, not through a web
+password-change page.
 
 ### Admin API key management
 
@@ -128,12 +127,8 @@ configuration is needed. Locally they are in memory and reset on restart.
 Revocation is permanent; create a new key to replace a revoked or lost key.
 
 Managed keys authenticate the MCP endpoint for `add_story`, `list_articles`, and
-`get_article`.
-Existing legacy REST endpoints
-and their `AUTHOR_CONFIG` `X-API-Key` authentication are unchanged; legacy keys
-are not listed or revoked by this page. MCP authentication checks the stored
-hash and revocation state on every request. Keep full keys out of source control,
-logs, URLs, and chat.
+`get_article`. MCP authentication checks the stored hash and revocation state on
+every request. Keep full keys out of source control, logs, URLs, and chat.
 
 ### MCP article discovery and publishing demo
 
@@ -179,6 +174,12 @@ failures return a sanitized error rather than fallback content.
 not fetch the source URL or expose image, storage, or key metadata. The tool is
 read-only, non-destructive, and idempotent; missing articles and storage failures
 return distinct sanitized errors.
+
+The MCP server also exposes a `write_article` prompt for drafting. It directs the
+client to inspect existing Hamba content first, use clear factual travel-journalism
+style, avoid Markdown and em dashes, and prepare `add_story` arguments. The prompt
+does not publish: a client must obtain explicit user approval before calling
+`add_story`.
 
 Azure deployment settings are injected by Bicep. For optional local Azure Storage access, copy `.env.example` to `.env`, authenticate with `az login`, and export the values into your shell. The example file contains no secrets.
 

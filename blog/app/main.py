@@ -11,7 +11,7 @@ from fastmcp.utilities.lifespan import combine_lifespans
 from starlette.routing import Route
 
 from .mcp_server import mcp_http_app
-from .routers.author import api_router, author_navigation_context, router as author_router
+from .routers.author import author_navigation_context, router as author_router
 from .routers.api_keys import router as api_keys_router
 from .storage.posts import posts as repository
 
@@ -36,7 +36,6 @@ templates = Jinja2Templates(
 )
 app.state.templates = templates
 app.include_router(author_router)
-app.include_router(api_router)
 app.include_router(api_keys_router)
 
 

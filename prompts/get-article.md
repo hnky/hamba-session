@@ -83,7 +83,6 @@ Describe the tool as retrieving one full published Hamba article by slug. Set:
   `get_article`. Preserve immediate revocation checks and request isolation.
 - Keep Bearer-header rules, Host/Origin protection, stateless HTTP mode, endpoint
   routing, application lifespan, public routes, and `/health` unchanged.
-- Managed MCP keys remain separate from legacy REST API keys.
 
 ## Documentation
 

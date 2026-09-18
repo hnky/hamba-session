@@ -32,14 +32,12 @@ def main() -> None:
     if password != confirmation:
         raise SystemExit("Passwords do not match")
 
-    api_key = "hamba_" + secrets.token_urlsafe(32)
     config = {
         "session_secret": secrets.token_urlsafe(48),
         "users": [
             {
                 "username": username,
                 "password_hash": AuthorAuth.hash_password(password),
-                "api_key_hash": AuthorAuth.hash_api_key(api_key),
             }
         ],
     }
@@ -51,8 +49,7 @@ def main() -> None:
             json.dump(config, file)
         print("Local author configuration created. It is excluded from Git and container builds.")
         return
-    print("\nStore these values securely. The API key is shown only now.\n")
-    print(f"API key: {api_key}")
+    print("\nStore this value securely.\n")
     print("AUTHOR_CONFIG=" + json.dumps(config, separators=(",", ":")))
 
 

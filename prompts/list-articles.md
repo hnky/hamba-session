@@ -66,8 +66,7 @@ systems beyond the Hamba service's own storage.
 
 Update `blog/README.md` and the Admin API keys page to state that managed keys can
 use both `add_story` and `list_articles`. Update wording that says the MCP server
-has exactly one tool. Keep the distinction between managed MCP keys and legacy REST
-API keys clear.
+has exactly one tool.
 
 ## Completion report
 

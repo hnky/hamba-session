@@ -1,8 +1,7 @@
 """Authenticated FastMCP article endpoint for the Hamba live demo.
 
 The server exposes story publishing, public article summaries, and full article
-retrieval. Managed keys come from the admin UI; legacy AUTHOR_CONFIG API keys
-remain REST-only.
+retrieval. Managed keys come from the admin UI.
 
 Requests check the host and Bearer key before reading articles or publishing.
 Publishing never overwrites an existing story and requires client-side approval;
@@ -11,7 +10,7 @@ an accepted add_story call publishes immediately.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 import logging
 import os
@@ -84,7 +83,7 @@ def _current_author() -> Author:
 
 
 @contextmanager
-def _publishing_errors() -> Iterator[None]:
+def _publishing_errors() -> Generator[None, None, None]:
     """Translate publishing failures into safe MCP errors; log internal details."""
     try:
         yield
@@ -202,6 +201,32 @@ mcp = FastMCP(
     mask_error_details=True,
     strict_input_validation=True,
 )
+
+
+@mcp.prompt(
+    name="write_article",
+    title="Write a Hamba article",
+    description="Draft a Hamba travel article using the blog's editorial style.",
+)
+def write_article(topic: str, source_url: str = "") -> str:
+    """Provide editorial guidance and a safe workflow for drafting an article."""
+    source_context = f"Optional source URL: {source_url}" if source_url else "No source URL was provided."
+    return f"""Draft a Hamba travel article about: {topic}
+
+Before drafting, call list_articles to check existing coverage. Use get_article
+for relevant slugs and do not duplicate or closely rewrite an existing Hamba story.
+
+Write clear, warm, factual travel journalism with a specific informative title,
+a concise lead, and complete paragraph strings containing concrete place details.
+Do not use Markdown headings, lists, blockquotes, or code fences. Do not use em
+dashes; use commas, periods, semicolons, or parentheses instead. Do not invent
+quotes, statistics, dates, prices, opening hours, sources, or travel claims.
+
+Prepare a proposed add_story payload with slug, title, lead, published_at, story,
+and optional source_url or image_url. Do not call add_story until the user has
+explicitly approved publication.
+
+{source_context}"""
 
 
 # Annotations help clients explain the action; they do not enforce user approval.

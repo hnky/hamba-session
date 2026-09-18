@@ -22,7 +22,6 @@ PBKDF2_ITERATIONS = 600_000
 class Author:
     username: str
     password_hash: str
-    api_key_hash: str
 
     @property
     def is_admin(self) -> bool:
@@ -51,10 +50,9 @@ class AuthorAuth:
                 author = Author(
                     username=str(user["username"]),
                     password_hash=str(user["password_hash"]),
-                    api_key_hash=str(user["api_key_hash"]),
                 )
                 self._authors[author.username] = author
-            if not all(author.username and author.password_hash and author.api_key_hash for author in self._authors.values()):
+            if not all(author.username and author.password_hash for author in self._authors.values()):
                 raise ValueError("Incomplete author entry")
             self._session_secret = session_secret.encode("utf-8")
         except (KeyError, TypeError, ValueError, json.JSONDecodeError):
@@ -78,10 +76,6 @@ class AuthorAuth:
         )
 
     @staticmethod
-    def hash_api_key(api_key: str) -> str:
-        return "sha256$" + hashlib.sha256(api_key.encode("utf-8")).hexdigest()
-
-    @staticmethod
     def _verify_password(password: str, encoded: str) -> bool:
         try:
             algorithm, iterations, salt_hex, expected_hex = encoded.split("$", 3)
@@ -102,13 +96,6 @@ class AuthorAuth:
         encoded = author.password_hash if author else self.hash_password("invalid")
         valid = self._verify_password(password, encoded)
         return author if author and valid else None
-
-    def verify_api_key(self, api_key: str) -> Author | None:
-        candidate = self.hash_api_key(api_key)
-        for author in self._authors.values():
-            if hmac.compare_digest(candidate, author.api_key_hash):
-                return author
-        return None
 
     def get_author(self, username: str) -> Author | None:
         return self._authors.get(username)

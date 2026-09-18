@@ -68,8 +68,6 @@ and async handlers; run synchronous storage work off the event loop.
 	`Authorization: Bearer <key>`.
 - Implement a custom FastMCP `TokenVerifier` backed by the existing repository.
 	Do not use a plaintext static-token dictionary or a permissive debug verifier.
-- The managed keys are distinct from legacy keys in `AUTHOR_CONFIG`.
-	The existing legacy `AuthorAuth.verify_api_key()` is not a managed-key verifier.
 - Add managed-key verification to the repository: validate the key format, read
 	its record by key ID, compare its SHA256 hash in constant time, and reject
 	missing, invalid, or revoked keys.
@@ -86,7 +84,6 @@ and async handlers; run synchronous storage work off the event loop.
 	credentials. Fail closed with sanitized errors if key storage is unavailable.
 - Never log, return, or commit raw keys. Do not read or print existing secret
 	configuration.
-- Keep legacy REST API authentication unchanged.
 - This is demo API-key authentication, not a full OAuth flow. Do not invent an
 	OAuth issuer, discovery metadata, authorization server, or new key-issuance API.
 
@@ -130,10 +127,9 @@ Expose no editing, deletion, listing, image-upload, or key-management MCP tools.
 - Add the approved dependency to `blog/requirements.txt` and adjust incompatible
 	dependency constraints only as needed.
 - Wire the MCP application into `blog/app/main.py` without changing public,
-	author, or legacy API behavior.
+	or author behavior.
 - Extend `blog/app/repository.py` for managed-key verification and atomic creation.
-- Update `blog/README.md` and API-key page text: managed keys now work for MCP
-	`add_story`, while legacy REST authentication remains unchanged.
+- Update `blog/README.md` and API-key page text for managed MCP keys and `add_story`.
 - Reuse existing infrastructure, identity, and storage. No new resources or
 	credentials are needed. If introducing environment configuration, follow the
 	repository rule to update Bicep, `azure.yaml`, and `.env.example` together.

@@ -4,15 +4,14 @@ from __future__ import annotations
 
 from datetime import date, datetime
 import hmac
-import json
 import re
 from urllib.parse import parse_qs
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.datastructures import UploadFile
 
@@ -21,7 +20,6 @@ from ..storage.posts import posts
 from ..storage.images import MAX_IMAGE_BYTES
 
 router = APIRouter(prefix="/author", tags=["author"])
-api_router = APIRouter(prefix="/api/author", tags=["author-api"])
 SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 MAX_FORM_BYTES = 64 * 1024
 
@@ -156,13 +154,6 @@ def post_values(data: dict[str, object], author: Author, existing: dict | None =
     )
 
 
-def _api_author(api_key: str | None) -> Author:
-    author = get_auth().verify_api_key(api_key or "")
-    if author is None:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return author
-
-
 @router.get("/login", response_class=Response)
 async def login_page(request: Request) -> Response:
     if _session(request):
@@ -264,8 +255,6 @@ async def create_post(request: Request) -> Response:
             status_code=400,
         )
     return RedirectResponse("/author/posts", status_code=status.HTTP_303_SEE_OTHER)
-
-
 @router.get("/posts/{slug}/edit", response_class=Response)
 async def edit_post_page(request: Request, slug: str) -> Response:
     current = _require_session(request)
@@ -306,46 +295,3 @@ async def update_post(request: Request, slug: str) -> Response:
             status_code=400,
         )
     return RedirectResponse("/author/posts", status_code=status.HTTP_303_SEE_OTHER)
-
-
-@api_router.get("/posts", response_class=JSONResponse)
-async def api_list_posts(x_api_key: str | None = Header(default=None)) -> JSONResponse:
-    _api_author(x_api_key)
-    return JSONResponse(await run_in_threadpool(posts.list_posts))
-
-
-@api_router.post("/posts", response_class=JSONResponse, status_code=201)
-async def api_create_post(request: Request, x_api_key: str | None = Header(default=None)) -> JSONResponse:
-    author = _api_author(x_api_key)
-    try:
-        payload = await request.json()
-        if not isinstance(payload, dict):
-            raise ValueError("Expected a JSON object")
-        post, image_url = post_values(payload, author)
-        saved = await run_in_threadpool(posts.create_post, post, image_url)
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=400, detail="Could not download the destination image") from exc
-    except (json.JSONDecodeError, ValueError, TypeError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return JSONResponse(saved, status_code=201)
-
-
-@api_router.put("/posts/{slug}", response_class=JSONResponse)
-async def api_update_post(
-    request: Request, slug: str, x_api_key: str | None = Header(default=None)
-) -> JSONResponse:
-    author = _api_author(x_api_key)
-    existing = await run_in_threadpool(posts.get_post, slug)
-    if existing is None:
-        raise HTTPException(status_code=404, detail="Post not found")
-    try:
-        payload = await request.json()
-        if not isinstance(payload, dict):
-            raise ValueError("Expected a JSON object")
-        post, image_url = post_values(payload, author, existing)
-        saved = await run_in_threadpool(posts.save_post, post, image_url)
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=400, detail="Could not download the destination image") from exc
-    except (json.JSONDecodeError, ValueError, TypeError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return JSONResponse(saved)
